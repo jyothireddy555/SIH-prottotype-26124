@@ -108,11 +108,27 @@ export default function App() {
       if (res && res.detection) {
         setLatestDetection(res.detection);
       }
-      loadAllData();
+      await loadAllData();
     } catch (e) {
       console.error('Simulation step error:', e);
     }
   };
+
+  // Continuous Play/Pause Simulation Controller
+  useEffect(() => {
+    if (isPlaying) {
+      handleStepSimulation();
+      const intervalMs = speed === '3x' ? 1200 : speed === '2x' ? 2000 : 3000;
+      simIntervalRef.current = setInterval(handleStepSimulation, intervalMs);
+    } else {
+      if (simIntervalRef.current) {
+        clearInterval(simIntervalRef.current);
+      }
+    }
+    return () => {
+      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+    };
+  }, [isPlaying, speed, activeBusId]);
 
   const handleTogglePlay = async () => {
     const nextState = !isPlaying;

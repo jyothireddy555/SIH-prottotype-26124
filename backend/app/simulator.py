@@ -357,10 +357,20 @@ def step_simulation(db: Session):
             gps_lng=waypoint["lng"],
             location_name=waypoint["name"]
         )
+        # Ensure defect hotspots reliably trigger pothole alerts on broken road sections
+        if "pothole" in scenario or "broken" in scenario or "broken" in waypoint["name"].lower() or "defect" in waypoint["name"].lower():
+            detection_res["has_pothole"] = True
+            detection_res["pothole_count"] = max(detection_res.get("pothole_count", 0), 1)
+            detection_res["highest_severity"] = "CRITICAL" if "critical" in scenario else "HIGH"
+            detection_res["confidence"] = max(detection_res.get("confidence", 0.94), 0.94)
+            if not detection_res.get("defect_depth_est"):
+                detection_res["defect_depth_est"] = "~7.2 cm (Opt. Depth Index)"
+            if not detection_res.get("defect_area_est"):
+                detection_res["defect_area_est"] = "0.52 sq.m"
     else:
         # Fallback simulation with grounded defect geometry
         is_traffic_route = (bus_id == "BUS-301")
-        has_pothole = not is_traffic_route and (curr_idx % 2 == 1)
+        has_pothole = not is_traffic_route and ("pothole" in scenario or "broken" in scenario or curr_idx % 2 == 1)
         vehicles = random.randint(16, 26) if is_traffic_route else random.randint(3, 8)
         density = "HIGH" if vehicles >= 8 else "MODERATE" if vehicles >= 4 else "LOW"
 
@@ -373,16 +383,16 @@ def step_simulation(db: Session):
             "potholes": [{
                 "bbox": [200, 300, 420, 440], 
                 "confidence": 0.94, 
-                "severity": "HIGH",
-                "defect_depth_est": "~6.4 cm (Opt. Depth Index)",
-                "defect_area_est": "0.45 sq.m"
+                "severity": "CRITICAL" if "critical" in scenario else "HIGH",
+                "defect_depth_est": "~6.8 cm (Opt. Depth Index)",
+                "defect_area_est": "0.48 sq.m"
             }] if has_pothole else [],
             "has_pothole": has_pothole,
             "pothole_count": 1 if has_pothole else 0,
-            "highest_severity": "HIGH" if has_pothole else "LOW",
+            "highest_severity": "CRITICAL" if "critical" in scenario else ("HIGH" if has_pothole else "LOW"),
             "confidence": 0.94 if has_pothole else 0.88,
-            "defect_depth_est": "~6.4 cm (Opt. Depth Index)",
-            "defect_area_est": "0.45 sq.m",
+            "defect_depth_est": "~6.8 cm (Opt. Depth Index)",
+            "defect_area_est": "0.48 sq.m",
             "bus_id": bus_id,
             "route_id": bus_config["route_id"],
             "speed_kmh": speed,
