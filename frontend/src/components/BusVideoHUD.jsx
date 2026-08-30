@@ -13,13 +13,15 @@ export default function BusVideoHUD({
   onPlayStateChange,
   onSelectBus,
   onInspectLatest,
-  onVideoProgress
+  onVideoProgress,
+  onSendLiveFrame
 }) {
   const videoRef = useRef(null);
   const [isMuted, setIsMuted] = useState(true);
   const [flashAlert, setFlashAlert] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const lastCaptureTimeRef = useRef(0);
 
   // Available feeds mapped to the 3 buses
   const busFeeds = {
@@ -40,6 +42,21 @@ export default function BusVideoHUD({
   const hardwareLabel = systemInfo?.device_type === 'GPU'
     ? `${systemInfo.device_name || 'CUDA GPU'} (${systemInfo.avg_inference_latency_ms || 4.2}ms)`
     : `EDGE CPU INFERENCE (${systemInfo?.avg_inference_latency_ms || 18.5}ms)`;
+
+  // Capture exact live frame from <video> element via fast offscreen canvas
+  const captureCurrentVideoFrame = () => {
+    if (!videoRef.current || videoRef.current.readyState < 2) return null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 360;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.85);
+    } catch (e) {
+      return null;
+    }
+  };
 
   // Sync video play/pause with parent isPlaying state
   useEffect(() => {
@@ -75,6 +92,17 @@ export default function BusVideoHUD({
       setCurrentTime(v.currentTime);
       setDuration(v.duration);
       const progress = Math.max(0, Math.min(v.currentTime / v.duration, 1.0));
+      
+      // Send live video frame to YOLO model periodically during playback
+      const now = performance.now();
+      if (isPlaying && (now - lastCaptureTimeRef.current > 1600)) {
+        lastCaptureTimeRef.current = now;
+        const b64 = captureCurrentVideoFrame();
+        if (b64 && onSendLiveFrame) {
+          onSendLiveFrame(b64, progress, v.currentTime);
+        }
+      }
+
       if (onVideoProgress) {
         onVideoProgress(progress, v.currentTime, v.duration);
       }
@@ -86,6 +114,13 @@ export default function BusVideoHUD({
     if (videoRef.current && duration > 0) {
       videoRef.current.currentTime = newProgress * duration;
       setCurrentTime(newProgress * duration);
+      
+      // On manual seek, immediately send the exact frame to YOLO model
+      const b64 = captureCurrentVideoFrame();
+      if (b64 && onSendLiveFrame) {
+        onSendLiveFrame(b64, newProgress, newProgress * duration);
+      }
+
       if (onVideoProgress) {
         onVideoProgress(newProgress, newProgress * duration, duration);
       }

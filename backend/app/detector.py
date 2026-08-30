@@ -254,7 +254,8 @@ def process_frame(
     if frame is None:
         raise ValueError("Invalid image input to process_frame")
 
-    annotated = frame.copy()
+    frame = np.ascontiguousarray(frame, dtype=np.uint8)
+    annotated = np.ascontiguousarray(frame.copy(), dtype=np.uint8)
 
     # Get models
     vehicle_model, pothole_model = get_models()

@@ -74,6 +74,12 @@ export const api = {
     return res.data;
   },
 
+  // Send Live Frame directly from Video Element
+  sendLiveFrame: async (payload) => {
+    const res = await axios.post(`${API_BASE}/simulate/live-frame`, payload);
+    return res.data;
+  },
+
   // Ingest Custom Image
   ingestImage: async (formData) => {
     const res = await axios.post(`${API_BASE}/ingest`, formData, {

@@ -75,16 +75,29 @@ export default function App() {
   const [videoProgress, setVideoProgress] = useState(0);
   const lastWaypointRef = useRef(-1);
 
-  // Video progress callback: synchronizes map bus position & triggers waypoint detection
+  // Video progress callback: synchronizes map bus position
   const handleVideoProgress = (progress, currTime, duration) => {
     setVideoProgress(progress);
+  };
 
-    // Trigger AI detection as video crosses route milestones
-    const totalWaypoints = 24;
-    const currentWaypointIndex = Math.floor(progress * totalWaypoints);
-    if (isPlaying && currentWaypointIndex !== lastWaypointRef.current) {
-      lastWaypointRef.current = currentWaypointIndex;
-      handleStepSimulation();
+  // Direct Live Frame Ingestion: Sends exact canvas frame to YOLO model
+  const handleSendLiveFrame = async (imageBase64, progress, currentTime) => {
+    try {
+      const res = await api.sendLiveFrame({
+        bus_id: activeBusId,
+        image_base64: imageBase64,
+        progress: progress,
+        speed_kmh: activeBus?.speed_kmh || 32.0,
+        lat: activeBus?.current_lat,
+        lng: activeBus?.current_lng,
+        location_name: activeBus?.route_name
+      });
+      if (res && res.detection) {
+        setLatestDetection(res.detection);
+      }
+      loadAllData();
+    } catch (e) {
+      console.error('Live frame error:', e);
     }
   };
 
@@ -238,6 +251,7 @@ export default function App() {
                         if (alerts.length > 0) setSelectedIncident(alerts[0]);
                       }}
                       onVideoProgress={handleVideoProgress}
+                      onSendLiveFrame={handleSendLiveFrame}
                     />
                   </div>
                 </div>
