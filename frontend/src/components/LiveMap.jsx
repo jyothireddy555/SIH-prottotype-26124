@@ -85,12 +85,31 @@ const createTrafficIcon = (count) => {
   });
 };
 
+// Helper to calculate smooth continuous GPS position along polyline based on video progress (0.0 to 1.0)
+export function interpolatePositionAlongRoute(coords, progress) {
+  if (!coords || coords.length === 0) return [18.5204, 73.8567];
+  if (coords.length === 1) return coords[0];
+  const p = Math.max(0, Math.min(progress, 0.99999));
+  
+  const scaledIndex = p * (coords.length - 1);
+  const segmentIdx = Math.floor(scaledIndex);
+  const segmentFraction = scaledIndex - segmentIdx;
+  
+  const p1 = coords[segmentIdx];
+  const p2 = coords[Math.min(segmentIdx + 1, coords.length - 1)];
+  
+  const lat = p1[0] + (p2[0] - p1[0]) * segmentFraction;
+  const lng = p1[1] + (p2[1] - p1[1]) * segmentFraction;
+  
+  return [lat, lng];
+}
+
 // Component to dynamically re-center map when active bus moves
 function MapUpdater({ lat, lng, isMoving }) {
   const map = useMap();
   useEffect(() => {
     if (lat && lng && isMoving) {
-      map.panTo([lat, lng], { animate: true, duration: 1.0 });
+      map.panTo([lat, lng], { animate: true, duration: 0.8 });
     }
   }, [lat, lng, isMoving, map]);
   return null;
@@ -101,6 +120,7 @@ export default function LiveMap({
   buses = [], 
   activeBus, 
   isPlaying = false,
+  videoProgress = 0,
   onSelectAlert, 
   onSelectBus
 }) {
@@ -193,6 +213,16 @@ export default function LiveMap({
     [18.5340, 73.7710]
   ];
 
+  const activeRouteCoords = activeBus?.bus_label === 'BUS-218' 
+    ? route500DCoords 
+    : activeBus?.bus_label === 'BUS-301' 
+    ? route335ECoords 
+    : route115Coords;
+
+  const interpolatedPos = interpolatePositionAlongRoute(activeRouteCoords, videoProgress);
+  const currentCenterLat = isPlaying ? interpolatedPos[0] : (activeBus?.current_lat || defaultCenter[0]);
+  const currentCenterLng = isPlaying ? interpolatedPos[1] : (activeBus?.current_lng || defaultCenter[1]);
+
   return (
     <div className="relative w-full h-[520px] lg:h-full min-h-[440px] rounded-xl overflow-hidden border border-slate-200 shadow-xs bg-white">
       
@@ -274,7 +304,7 @@ export default function LiveMap({
         className="w-full h-full z-0"
         zoomControl={false}
       >
-        <MapUpdater lat={activeBus?.current_lat || defaultCenter[0]} lng={activeBus?.current_lng || defaultCenter[1]} isMoving={isPlaying} />
+        <MapUpdater lat={currentCenterLat} lng={currentCenterLng} isMoving={isPlaying} />
         
         {/* OpenStreetMap / CartoDB Positron Light Tiles */}
         <TileLayer
@@ -355,12 +385,13 @@ export default function LiveMap({
         {showBuses && buses.map((bus) => {
           const isThisBusActive = activeBus && activeBus.bus_label === bus.bus_label;
           const isMoving = isThisBusActive ? isPlaying : false;
-          const speed = isMoving ? bus.speed_kmh : 0;
+          const speed = isMoving ? (activeBus?.speed_kmh || bus.speed_kmh || 32) : 0;
+          const markerPos = (isThisBusActive && isPlaying) ? interpolatedPos : [bus.current_lat, bus.current_lng];
 
           return (
             <Marker
               key={`bus-${bus.id || bus.bus_label}`}
-              position={[bus.current_lat, bus.current_lng]}
+              position={markerPos}
               icon={createBusIcon(bus.bus_label, speed, isMoving, isThisBusActive)}
               eventHandlers={{
                 click: () => onSelectBus && onSelectBus(bus)

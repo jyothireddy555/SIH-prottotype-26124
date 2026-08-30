@@ -72,6 +72,22 @@ export default function App() {
     }
   };
 
+  const [videoProgress, setVideoProgress] = useState(0);
+  const lastWaypointRef = useRef(-1);
+
+  // Video progress callback: synchronizes map bus position & triggers waypoint detection
+  const handleVideoProgress = (progress, currTime, duration) => {
+    setVideoProgress(progress);
+
+    // Trigger AI detection as video crosses route milestones
+    const totalWaypoints = 24;
+    const currentWaypointIndex = Math.floor(progress * totalWaypoints);
+    if (isPlaying && currentWaypointIndex !== lastWaypointRef.current) {
+      lastWaypointRef.current = currentWaypointIndex;
+      handleStepSimulation();
+    }
+  };
+
   // Step simulation logic
   const handleStepSimulation = async () => {
     try {
@@ -85,21 +101,6 @@ export default function App() {
     }
   };
 
-  // Continuous Play/Pause Simulation Controller
-  useEffect(() => {
-    if (isPlaying) {
-      const intervalMs = speed === '3x' ? 1000 : speed === '2x' ? 1800 : 2800;
-      simIntervalRef.current = setInterval(handleStepSimulation, intervalMs);
-    } else {
-      if (simIntervalRef.current) {
-        clearInterval(simIntervalRef.current);
-      }
-    }
-    return () => {
-      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
-    };
-  }, [isPlaying, speed]);
-
   const handleTogglePlay = async () => {
     const nextState = !isPlaying;
     setIsPlaying(nextState);
@@ -112,6 +113,8 @@ export default function App() {
 
   const handleReset = async () => {
     setIsPlaying(false);
+    setVideoProgress(0);
+    lastWaypointRef.current = -1;
     try {
       await api.resetSim(true);
       setLatestDetection(null);
@@ -226,10 +229,15 @@ export default function App() {
                       systemInfo={systemInfo}
                       onTogglePlay={handleTogglePlay}
                       onPlayStateChange={(state) => setIsPlaying(state)}
-                      onSelectBus={handleSelectBusId}
+                      onSelectBus={(busId) => {
+                        setVideoProgress(0);
+                        lastWaypointRef.current = -1;
+                        handleSelectBusId(busId);
+                      }}
                       onInspectLatest={() => {
                         if (alerts.length > 0) setSelectedIncident(alerts[0]);
                       }}
+                      onVideoProgress={handleVideoProgress}
                     />
                   </div>
                 </div>
@@ -251,8 +259,11 @@ export default function App() {
                       buses={buses}
                       activeBus={activeBus}
                       isPlaying={isPlaying}
+                      videoProgress={videoProgress}
                       onSelectAlert={(al) => setSelectedIncident(al)}
                       onSelectBus={(b) => {
+                        setVideoProgress(0);
+                        lastWaypointRef.current = -1;
                         handleSelectBusId(b.bus_label);
                         setSelectedBus(b);
                       }}

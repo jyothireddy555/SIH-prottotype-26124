@@ -12,11 +12,14 @@ export default function BusVideoHUD({
   onTogglePlay,
   onPlayStateChange,
   onSelectBus,
-  onInspectLatest 
+  onInspectLatest,
+  onVideoProgress
 }) {
   const videoRef = useRef(null);
   const [isMuted, setIsMuted] = useState(true);
   const [flashAlert, setFlashAlert] = useState(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   // Available feeds mapped to the 3 buses
   const busFeeds = {
@@ -66,6 +69,36 @@ export default function BusVideoHUD({
     }
   };
 
+  const handleTimeUpdate = (e) => {
+    const v = e.target;
+    if (v && v.duration) {
+      setCurrentTime(v.currentTime);
+      setDuration(v.duration);
+      const progress = Math.max(0, Math.min(v.currentTime / v.duration, 1.0));
+      if (onVideoProgress) {
+        onVideoProgress(progress, v.currentTime, v.duration);
+      }
+    }
+  };
+
+  const handleSeek = (e) => {
+    const newProgress = parseFloat(e.target.value);
+    if (videoRef.current && duration > 0) {
+      videoRef.current.currentTime = newProgress * duration;
+      setCurrentTime(newProgress * duration);
+      if (onVideoProgress) {
+        onVideoProgress(newProgress, newProgress * duration, duration);
+      }
+    }
+  };
+
+  const formatTime = (secs) => {
+    if (!secs || isNaN(secs)) return "00:00";
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
   // Flash detection indicator on HUD when new detection occurs
   useEffect(() => {
     if (latestDetection && (latestDetection.has_pothole || latestDetection.density_level === 'HIGH' || latestDetection.total_vehicles >= 8)) {
@@ -74,6 +107,8 @@ export default function BusVideoHUD({
       return () => clearTimeout(timer);
     }
   }, [latestDetection]);
+
+  const progressValue = duration > 0 ? (currentTime / duration) : 0;
 
   return (
     <div className="relative w-full h-full min-h-[360px] bg-slate-950 rounded-xl overflow-hidden border border-slate-200 shadow-xs flex flex-col justify-between group">
@@ -86,6 +121,8 @@ export default function BusVideoHUD({
         loop
         muted={isMuted}
         playsInline
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={(e) => setDuration(e.target.duration || 1)}
         onPlay={() => onPlayStateChange && onPlayStateChange(true)}
         onPause={() => onPlayStateChange && onPlayStateChange(false)}
         className="absolute inset-0 w-full h-full object-cover cursor-pointer"
@@ -93,7 +130,7 @@ export default function BusVideoHUD({
       />
 
       {/* Dark Gradient Vignette for readable HUD overlays */}
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-transparent to-slate-950/65 pointer-events-none"></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-slate-950/65 pointer-events-none"></div>
 
       {/* Top HUD Telemetry Bar */}
       <div className="relative z-10 p-3 flex items-center justify-between text-white">
@@ -188,49 +225,72 @@ export default function BusVideoHUD({
         )}
       </div>
 
-      {/* Bottom Live Edge Telemetry Bar */}
-      <div className="relative z-10 p-3 bg-slate-950/90 backdrop-blur-xs border-t border-white/15 text-white flex items-center justify-between text-xs font-mono">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={handleTogglePlay}
-            className={`p-1.5 rounded text-white flex items-center space-x-1 text-[11px] font-bold ${
-              isPlaying ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-            title={isPlaying ? "Stop Bus & Video" : "Move Bus & Play Video"}
-          >
-            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-white" />}
-            <span>{isPlaying ? 'PAUSE' : 'DRIVE'}</span>
-          </button>
-          
-          <div>
-            <span className="text-slate-400 text-[10px] block">SPEED</span>
-            <span className={`font-bold ${isPlaying ? 'text-slate-100' : 'text-amber-400'}`}>
-              {isPlaying ? (activeBus?.speed_kmh || 34.0) : 0.0} km/h
-            </span>
-          </div>
-
-          <div className="hidden sm:block">
-            <span className="text-slate-400 text-[10px] block">GPS COORDINATES</span>
-            <span className="text-slate-200">
-              {activeBus?.current_lat?.toFixed(4) || '18.5558'}° N, {activeBus?.current_lng?.toFixed(4) || '73.9064'}° E
-            </span>
-          </div>
+      {/* Synchronized Video Scrubber & Bottom Live Edge Telemetry Bar */}
+      <div className="relative z-10 bg-slate-950/95 backdrop-blur-xs border-t border-white/15 text-white flex flex-col">
+        
+        {/* Scrubber Bar synced with Map Progress */}
+        <div className="px-3 pt-2 pb-1 flex items-center space-x-2.5">
+          <span className="text-[10px] font-mono text-slate-400 shrink-0">
+            {formatTime(currentTime)}
+          </span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.001"
+            value={progressValue}
+            onChange={handleSeek}
+            className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400"
+            title="Drag to seek synchronized video position and map location"
+          />
+          <span className="text-[10px] font-mono text-slate-400 shrink-0">
+            {formatTime(duration)}
+          </span>
         </div>
 
-        <div className="flex items-center space-x-3 text-right">
-          <div>
-            <span className="text-slate-400 text-[10px] block">LIVE VEHICLE COUNT</span>
-            <span className={`font-bold text-sm ${
-              displayDensity === 'HIGH' ? 'text-amber-400' : 'text-emerald-400'
-            }`}>
-              {displayVehicles} vehicles ({displayDensity})
-            </span>
+        <div className="px-3 pb-2.5 pt-0.5 flex items-center justify-between text-xs font-mono">
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleTogglePlay}
+              className={`p-1.5 rounded text-white flex items-center space-x-1 text-[11px] font-bold ${
+                isPlaying ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+              title={isPlaying ? "Stop Bus & Video" : "Move Bus & Play Video"}
+            >
+              {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-white" />}
+              <span>{isPlaying ? 'PAUSE' : 'DRIVE'}</span>
+            </button>
+            
+            <div>
+              <span className="text-slate-400 text-[10px] block">SPEED</span>
+              <span className={`font-bold ${isPlaying ? 'text-slate-100' : 'text-amber-400'}`}>
+                {isPlaying ? (activeBus?.speed_kmh || 34.0) : 0.0} km/h
+              </span>
+            </div>
+
+            <div className="hidden sm:block">
+              <span className="text-slate-400 text-[10px] block">GPS COORDINATES</span>
+              <span className="text-slate-200">
+                {activeBus?.current_lat?.toFixed(4) || '18.5558'}° N, {activeBus?.current_lng?.toFixed(4) || '73.9064'}° E
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="text-slate-400 text-[10px] block">ROUTE CORRIDOR</span>
-            <span className="text-blue-300 font-sans font-medium text-[11px]">
-              {activeBus?.route_id || 'Route 115'}
-            </span>
+
+          <div className="flex items-center space-x-3 text-right">
+            <div>
+              <span className="text-slate-400 text-[10px] block">LIVE VEHICLE COUNT</span>
+              <span className={`font-bold text-sm ${
+                displayDensity === 'HIGH' ? 'text-amber-400' : 'text-emerald-400'
+              }`}>
+                {displayVehicles} vehicles ({displayDensity})
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 text-[10px] block">ROUTE CORRIDOR</span>
+              <span className="text-blue-300 font-sans font-medium text-[11px]">
+                {activeBus?.route_id || 'Route 115'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
