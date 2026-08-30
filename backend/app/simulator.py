@@ -377,21 +377,21 @@ def step_simulation(db: Session):
         )
         db.add(log)
 
-    # 2. High Vehicle Density Alert
-    if detection_res["density_level"] == "HIGH":
+    # 2. Vehicle Flow & Traffic Density Alert
+    if detection_res["total_vehicles"] >= 4 or detection_res["density_level"] in ["HIGH", "MODERATE"] or bus_id == "BUS-301":
         code_num = random.randint(10000, 99999)
         alert_code = f"TRF-{code_num}"
         traffic_alert = Alert(
             alert_code=alert_code,
             alert_type="vehicle_density",
-            severity="HIGH" if detection_res["total_vehicles"] > 16 else "MEDIUM",
-            confidence=0.93,
-            vehicle_count=detection_res["total_vehicles"],
-            density_level="HIGH",
+            severity="HIGH" if detection_res["total_vehicles"] >= 8 else "MEDIUM",
+            confidence=0.94,
+            vehicle_count=max(detection_res["total_vehicles"], 4 if bus_id != "BUS-301" else 18),
+            density_level="HIGH" if detection_res["total_vehicles"] >= 8 or bus_id == "BUS-301" else "MODERATE",
             bus_id=bus_id,
             route_id=bus_config["route_id"],
-            latitude=waypoint["lat"],
-            longitude=waypoint["lng"],
+            latitude=waypoint["lat"] + random.uniform(-0.0001, 0.0001),
+            longitude=waypoint["lng"] + random.uniform(-0.0001, 0.0001),
             location_name=waypoint["name"],
             timestamp=datetime.datetime.utcnow(),
             raw_image_url=detection_res.get("raw_image_url"),
@@ -408,7 +408,7 @@ def step_simulation(db: Session):
             bus_id=bus_id,
             agent_name=f"Traffic Intelligence Agent ({bus_id})",
             activity_type="DETECTION",
-            message=f"Heavy vehicle volume ({detection_res['total_vehicles']} vehicles) at {waypoint['name']}",
+            message=f"Traffic flow active ({detection_res['total_vehicles']} vehicles detected) at {waypoint['name']}",
             timestamp=datetime.datetime.utcnow(),
             severity="INFO"
         )

@@ -27,6 +27,12 @@ export default function BusVideoHUD({
   const currentBusKey = activeBus?.bus_label || 'BUS-104';
   const currentFeed = busFeeds[currentBusKey]?.url || '/videos/bus_dashcam_feed.mp4';
 
+  const defaultVehicles = currentBusKey === 'BUS-301' ? 22 : currentBusKey === 'BUS-218' ? 7 : 4;
+  const defaultDensity = currentBusKey === 'BUS-301' ? 'HIGH' : currentBusKey === 'BUS-218' ? 'MODERATE' : 'LOW';
+
+  const displayVehicles = latestDetection?.total_vehicles !== undefined ? latestDetection.total_vehicles : defaultVehicles;
+  const displayDensity = latestDetection?.density_level || defaultDensity;
+
   // Sync video play/pause with parent isPlaying state
   useEffect(() => {
     if (videoRef.current) {
@@ -57,7 +63,7 @@ export default function BusVideoHUD({
 
   // Flash detection indicator on HUD when new detection occurs
   useEffect(() => {
-    if (latestDetection && (latestDetection.has_pothole || latestDetection.density_level === 'HIGH')) {
+    if (latestDetection && (latestDetection.has_pothole || latestDetection.density_level === 'HIGH' || latestDetection.total_vehicles >= 8)) {
       setFlashAlert(latestDetection);
       const timer = setTimeout(() => setFlashAlert(null), 3500);
       return () => clearTimeout(timer);
@@ -127,7 +133,7 @@ export default function BusVideoHUD({
       {/* Center Dynamic HUD Detection Flash / Manual Play Overlay */}
       <div className="relative z-10 px-4 flex flex-col items-center justify-center my-auto">
         
-        {/* Detection Flash Alert */}
+        {/* Pothole Flash Alert */}
         {flashAlert && flashAlert.has_pothole && (
           <div className="bg-red-600/95 backdrop-blur-xs border-2 border-white text-white px-4 py-2.5 rounded-xl shadow-2xl animate-bounce flex items-center space-x-3 pointer-events-auto">
             <ShieldAlert className="w-6 h-6 text-white shrink-0" />
@@ -150,15 +156,16 @@ export default function BusVideoHUD({
           </div>
         )}
 
-        {flashAlert && !flashAlert.has_pothole && flashAlert.density_level === 'HIGH' && (
+        {/* Traffic Density Flash Alert */}
+        {flashAlert && !flashAlert.has_pothole && (flashAlert.density_level === 'HIGH' || flashAlert.total_vehicles >= 8) && (
           <div className="bg-amber-600/95 backdrop-blur-xs border-2 border-white text-white px-4 py-2.5 rounded-xl shadow-2xl animate-pulse flex items-center space-x-3">
             <Car className="w-5 h-5 text-white shrink-0" />
             <div>
               <div className="font-bold text-xs uppercase tracking-wider">
-                🚗 HIGH VEHICLE DENSITY SPIKE
+                🚗 HIGH VEHICULAR FLOW DETECTED
               </div>
               <div className="text-[11px] text-amber-100 font-mono">
-                {flashAlert.total_vehicles} Vehicles Counted · {flashAlert.location_name}
+                {flashAlert.total_vehicles || displayVehicles} Vehicles In View · {flashAlert.location_name || 'Highway Corridor'}
               </div>
             </div>
           </div>
@@ -207,11 +214,11 @@ export default function BusVideoHUD({
 
         <div className="flex items-center space-x-3 text-right">
           <div>
-            <span className="text-slate-400 text-[10px] block">VEHICLE DENSITY</span>
-            <span className={`font-bold ${
-              latestDetection?.density_level === 'HIGH' ? 'text-amber-400' : 'text-emerald-400'
+            <span className="text-slate-400 text-[10px] block">LIVE VEHICLE COUNT</span>
+            <span className={`font-bold text-sm ${
+              displayDensity === 'HIGH' ? 'text-amber-400' : 'text-emerald-400'
             }`}>
-              {latestDetection?.total_vehicles || 6} ({latestDetection?.density_level || 'LOW'})
+              {displayVehicles} vehicles ({displayDensity})
             </span>
           </div>
           <div>
