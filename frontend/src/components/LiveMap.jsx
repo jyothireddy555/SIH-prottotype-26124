@@ -32,18 +32,19 @@ const createBusIcon = (label, speed, isMoving, isActive) => {
     html: `
       <div class="relative flex flex-col items-center cursor-pointer transition-transform hover:scale-110">
         <div class="${busColor} text-white p-2 rounded-xl shadow-lg border-2 border-white flex items-center justify-center ${pulseClass}">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          <!-- Authentic Public Transit Bus Silhouette Icon -->
+          <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm1.5-6H6V6h12v5z"/>
           </svg>
         </div>
         <div class="${badgeColor} text-[10px] font-bold px-1.5 py-0.5 rounded shadow border mt-1 whitespace-nowrap flex items-center">
           ${statusDot}
-          <span>${label} · ${speedText}</span>
+          <span>🚌 ${label} · ${speedText}</span>
         </div>
       </div>
     `,
-    iconSize: [44, 52],
-    iconAnchor: [22, 26]
+    iconSize: [48, 54],
+    iconAnchor: [24, 27]
   });
 };
 
