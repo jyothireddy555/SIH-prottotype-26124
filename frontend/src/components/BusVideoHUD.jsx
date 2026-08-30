@@ -191,9 +191,21 @@ export default function BusVideoHUD({
         </div>
 
         <div className="flex items-center space-x-2">
-          <div className="bg-blue-950/90 border border-blue-400/50 text-blue-300 px-2.5 py-1 rounded-md text-[10px] font-mono flex items-center space-x-1.5">
+          {/* Simulated Axle IMU Sensor Fusion Indicator */}
+          <div className={`px-2 py-0.5 rounded text-[10px] font-mono flex items-center space-x-1 border ${
+            latestDetection?.has_pothole
+              ? 'bg-red-950/90 border-red-500 text-red-300 animate-pulse'
+              : 'bg-slate-900/90 border-emerald-500/50 text-emerald-300'
+          }`} title="Axle IMU Vibration Sensor Fusion (Z-Axis Shockwave G-Force)">
+            <Activity className="w-3 h-3" />
+            <span>
+              IMU: {latestDetection?.has_pothole ? 'Δgz 2.45g (SPIKE)' : isPlaying ? 'Δgz 1.02g (NOMINAL)' : '0.00g'}
+            </span>
+          </div>
+
+          <div className="bg-blue-950/90 border border-blue-400/50 text-blue-300 px-2 py-0.5 rounded text-[10px] font-mono flex items-center space-x-1">
             <Cpu className="w-3 h-3 text-blue-400" />
-            <span>{hardwareLabel}</span>
+            <span>YOLOv8-RDD2022</span>
           </div>
 
           {/* Audio toggle */}
