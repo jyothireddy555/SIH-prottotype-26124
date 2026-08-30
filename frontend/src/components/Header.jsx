@@ -134,6 +134,16 @@ export default function Header({
             <RefreshCw className="w-4 h-4" />
           </button>
 
+          {/* Jury Demo Clean Reset */}
+          <button
+            onClick={onReset}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold hover:bg-rose-100 hover:border-rose-300 transition-colors shadow-2xs"
+            title="Purge all prior alerts & reset simulation for a fresh jury demonstration"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+            <span>Jury Demo Reset</span>
+          </button>
+
           {/* Test Custom Frame Upload */}
           <button
             onClick={onOpenUpload}

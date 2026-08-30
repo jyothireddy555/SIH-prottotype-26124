@@ -114,8 +114,8 @@ class SimulationState:
 
 sim_state = SimulationState()
 
-def initialize_fleet_and_demo_data(db: Session):
-    """Seed initial buses along their distinct routes if DB is empty"""
+def initialize_fleet_and_demo_data(db: Session, clean_slate: bool = False):
+    """Seed initial buses along their distinct routes"""
     existing_buses = db.query(Bus).count()
     if existing_buses == 0:
         initial_buses = [
@@ -126,13 +126,13 @@ def initialize_fleet_and_demo_data(db: Session):
                 route_name=FLEET_ROUTES["BUS-104"]["route_name"],
                 current_lat=FLEET_ROUTES["BUS-104"]["default_lat"],
                 current_lng=FLEET_ROUTES["BUS-104"]["default_lng"],
-                speed_kmh=34.0,
+                speed_kmh=0.0 if clean_slate else 34.0,
                 heading=68.0,
                 camera_status="ONLINE",
                 last_ping=datetime.datetime.utcnow(),
-                total_detections=18,
-                total_potholes=5,
-                total_vehicles=82
+                total_detections=0 if clean_slate else 18,
+                total_potholes=0 if clean_slate else 5,
+                total_vehicles=0 if clean_slate else 82
             ),
             Bus(
                 bus_number=FLEET_ROUTES["BUS-218"]["plate"],
@@ -141,13 +141,13 @@ def initialize_fleet_and_demo_data(db: Session):
                 route_name=FLEET_ROUTES["BUS-218"]["route_name"],
                 current_lat=FLEET_ROUTES["BUS-218"]["default_lat"],
                 current_lng=FLEET_ROUTES["BUS-218"]["default_lng"],
-                speed_kmh=26.0,
+                speed_kmh=0.0 if clean_slate else 26.0,
                 heading=112.0,
                 camera_status="ONLINE",
                 last_ping=datetime.datetime.utcnow(),
-                total_detections=24,
-                total_potholes=8,
-                total_vehicles=140
+                total_detections=0 if clean_slate else 24,
+                total_potholes=0 if clean_slate else 8,
+                total_vehicles=0 if clean_slate else 140
             ),
             Bus(
                 bus_number=FLEET_ROUTES["BUS-301"]["plate"],
@@ -156,13 +156,13 @@ def initialize_fleet_and_demo_data(db: Session):
                 route_name=FLEET_ROUTES["BUS-301"]["route_name"],
                 current_lat=FLEET_ROUTES["BUS-301"]["default_lat"],
                 current_lng=FLEET_ROUTES["BUS-301"]["default_lng"],
-                speed_kmh=21.0,
+                speed_kmh=0.0 if clean_slate else 21.0,
                 heading=240.0,
                 camera_status="ONLINE",
                 last_ping=datetime.datetime.utcnow(),
-                total_detections=12,
-                total_potholes=2,
-                total_vehicles=165
+                total_detections=0 if clean_slate else 12,
+                total_potholes=0 if clean_slate else 2,
+                total_vehicles=0 if clean_slate else 165
             )
         ]
         db.add_all(initial_buses)
@@ -173,96 +173,78 @@ def initialize_fleet_and_demo_data(db: Session):
             bus_id="BUS-104",
             agent_name="City AI Supervisor",
             activity_type="SYSTEM",
-            message="ROADWISE Urban AI platform initialized. 3 distinct transit bus corridors operational.",
+            message="✨ ROADWISE Clean Slate Initialized for Jury Demo. 3 Mobile Edge Nodes Ready.",
             timestamp=datetime.datetime.utcnow(),
             severity="SUCCESS"
         )
         db.add(log)
 
-        # Seed baseline alerts (Potholes & Traffic Density)
-        initial_alerts = [
-            Alert(
-                alert_code="PTH-10482",
-                alert_type="pothole",
-                severity="CRITICAL",
-                confidence=0.95,
-                vehicle_count=4,
-                density_level="LOW",
-                bus_id="BUS-104",
-                route_id="Route 115",
-                latitude=18.5492,
-                longitude=73.7798,
-                location_name="KANNU KI CHAI Jcn (Broken Asphalt)",
-                timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=14),
-                raw_image_url="/uploads/sample_sus_pothole.jpg",
-                annotated_image_url="/uploads/sample_sus_pothole.jpg",
-                status="OPEN",
-                defect_depth_est="~7.8 cm",
-                defect_area_est="0.52 sq.m",
-                speed_kmh=31.0,
-                ai_agent_name="Road Defect Agent (BUS-104)"
-            ),
-            Alert(
-                alert_code="PTH-20941",
-                alert_type="pothole",
-                severity="HIGH",
-                confidence=0.92,
-                vehicle_count=6,
-                density_level="MODERATE",
-                bus_id="BUS-218",
-                route_id="Route 500D",
-                latitude=18.5558,
-                longitude=73.9064,
-                location_name="Kalyani Nagar Flyover Ramp",
-                timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=22),
-                raw_image_url="/uploads/sample_monsoon_pothole.jpg",
-                annotated_image_url="/uploads/sample_monsoon_pothole.jpg",
-                status="VERIFIED",
-                defect_depth_est="~5.4 cm",
-                defect_area_est="0.38 sq.m",
-                speed_kmh=27.0,
-                ai_agent_name="Road Defect Agent (BUS-218)"
-            ),
-            Alert(
-                alert_code="TRF-30812",
-                alert_type="vehicle_density",
-                severity="HIGH",
-                confidence=0.96,
-                vehicle_count=22,
-                density_level="HIGH",
-                bus_id="BUS-301",
-                route_id="Route 335E",
-                latitude=18.4685,
-                longitude=73.8628,
-                location_name="Katraj Bypass Flyover Approach",
-                timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=8),
-                raw_image_url="/uploads/sample_traffic_jam.jpg",
-                annotated_image_url="/uploads/sample_traffic_jam.jpg",
-                status="OPEN",
-                speed_kmh=14.0,
-                ai_agent_name="Traffic Intelligence Agent (BUS-301)"
-            ),
-            Alert(
-                alert_code="TRF-30944",
-                alert_type="vehicle_density",
-                severity="HIGH",
-                confidence=0.94,
-                vehicle_count=26,
-                density_level="HIGH",
-                bus_id="BUS-301",
-                route_id="Route 335E",
-                latitude=18.4550,
-                longitude=73.8645,
-                location_name="Highway Tollway Tourist Chokepoint",
-                timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=4),
-                raw_image_url="/uploads/sample_traffic_jam.jpg",
-                annotated_image_url="/uploads/sample_traffic_jam.jpg",
-                status="OPEN",
-                speed_kmh=9.0,
-                ai_agent_name="Traffic Intelligence Agent (BUS-301)"
-            )
-        ]
-        db.add_all(initial_alerts)
+        if not clean_slate:
+            # Seed sample baseline alerts
+            initial_alerts = [
+                Alert(
+                    alert_code="PTH-10482",
+                    alert_type="pothole",
+                    severity="CRITICAL",
+                    confidence=0.95,
+                    vehicle_count=4,
+                    density_level="LOW",
+                    bus_id="BUS-104",
+                    route_id="Route 115",
+                    latitude=18.5492,
+                    longitude=73.7798,
+                    location_name="KANNU KI CHAI Jcn (Broken Asphalt)",
+                    timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=14),
+                    raw_image_url="/uploads/sample_sus_pothole.jpg",
+                    annotated_image_url="/uploads/sample_sus_pothole.jpg",
+                    status="OPEN",
+                    defect_depth_est="~7.8 cm",
+                    defect_area_est="0.52 sq.m",
+                    speed_kmh=31.0,
+                    ai_agent_name="Road Defect Agent (BUS-104)"
+                ),
+                Alert(
+                    alert_code="PTH-20941",
+                    alert_type="pothole",
+                    severity="HIGH",
+                    confidence=0.92,
+                    vehicle_count=6,
+                    density_level="MODERATE",
+                    bus_id="BUS-218",
+                    route_id="Route 500D",
+                    latitude=18.5558,
+                    longitude=73.9064,
+                    location_name="Kalyani Nagar Flyover Ramp",
+                    timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=22),
+                    raw_image_url="/uploads/sample_monsoon_pothole.jpg",
+                    annotated_image_url="/uploads/sample_monsoon_pothole.jpg",
+                    status="VERIFIED",
+                    defect_depth_est="~5.4 cm",
+                    defect_area_est="0.38 sq.m",
+                    speed_kmh=27.0,
+                    ai_agent_name="Road Defect Agent (BUS-218)"
+                ),
+                Alert(
+                    alert_code="TRF-30812",
+                    alert_type="vehicle_density",
+                    severity="HIGH",
+                    confidence=0.96,
+                    vehicle_count=22,
+                    density_level="HIGH",
+                    bus_id="BUS-301",
+                    route_id="Route 335E",
+                    latitude=18.4685,
+                    longitude=73.8628,
+                    location_name="Katraj Bypass Flyover Approach",
+                    timestamp=datetime.datetime.utcnow() - datetime.timedelta(minutes=8),
+                    raw_image_url="/uploads/sample_traffic_jam.jpg",
+                    annotated_image_url="/uploads/sample_traffic_jam.jpg",
+                    status="OPEN",
+                    speed_kmh=14.0,
+                    ai_agent_name="Traffic Intelligence Agent (BUS-301)"
+                )
+            ]
+            db.add_all(initial_alerts)
         db.commit()
 
 

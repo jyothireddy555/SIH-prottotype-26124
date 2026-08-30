@@ -110,13 +110,19 @@ export default function App() {
     } catch (e) {}
   };
 
+  const [resetToast, setResetToast] = useState(null);
+
   const handleReset = async () => {
     setIsPlaying(false);
     try {
-      await api.resetSim();
+      await api.resetSim(true);
       setLatestDetection(null);
-      loadAllData();
-    } catch (e) {}
+      await loadAllData();
+      setResetToast("✨ Fresh Jury Demo Mode Initialized: All historical alerts cleared. Click [START BUS RUN] to begin live AI detection!");
+      setTimeout(() => setResetToast(null), 5000);
+    } catch (e) {
+      console.error('Reset error:', e);
+    }
   };
 
   const handleUpdateStatus = async (alertId, action) => {
@@ -165,6 +171,17 @@ export default function App() {
         activeBusId={activeBusId}
         onSelectBusId={handleSelectBusId}
       />
+
+      {/* Jury Demo Reset Toast Banner */}
+      {resetToast && (
+        <div className="bg-purple-600 text-white px-6 py-2.5 text-xs font-bold font-mono flex items-center justify-between shadow-md animate-fadeIn">
+          <div className="flex items-center space-x-2">
+            <span className="bg-white text-purple-700 px-2 py-0.5 rounded text-[10px] uppercase font-sans font-extrabold">JURY DEMO MODE</span>
+            <span>{resetToast}</span>
+          </div>
+          <button onClick={() => setResetToast(null)} className="text-white/80 hover:text-white font-bold ml-4">✕</button>
+        </div>
+      )}
 
       {/* 2. Main App Container */}
       <div className="flex-1 flex overflow-hidden">

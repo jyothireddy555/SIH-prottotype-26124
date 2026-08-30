@@ -57,8 +57,8 @@ export const api = {
     return res.data;
   },
 
-  resetSim: async () => {
-    const res = await axios.post(`${API_BASE}/simulate/reset`);
+  resetSim: async (cleanSlate = true) => {
+    const res = await axios.post(`${API_BASE}/simulate/reset?clean_slate=${cleanSlate}`);
     return res.data;
   },
 
