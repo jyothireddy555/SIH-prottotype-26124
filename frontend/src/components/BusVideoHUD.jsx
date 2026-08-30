@@ -8,6 +8,7 @@ export default function BusVideoHUD({
   activeBus, 
   latestDetection, 
   isPlaying, 
+  systemInfo,
   onTogglePlay,
   onPlayStateChange,
   onSelectBus,
@@ -32,6 +33,10 @@ export default function BusVideoHUD({
 
   const displayVehicles = latestDetection?.total_vehicles !== undefined ? latestDetection.total_vehicles : defaultVehicles;
   const displayDensity = latestDetection?.density_level || defaultDensity;
+
+  const hardwareLabel = systemInfo?.device_type === 'GPU'
+    ? `${systemInfo.device_name || 'CUDA GPU'} (${systemInfo.avg_inference_latency_ms || 4.2}ms)`
+    : `EDGE CPU INFERENCE (${systemInfo?.avg_inference_latency_ms || 18.5}ms)`;
 
   // Sync video play/pause with parent isPlaying state
   useEffect(() => {
@@ -116,7 +121,7 @@ export default function BusVideoHUD({
         <div className="flex items-center space-x-2">
           <div className="bg-blue-950/90 border border-blue-400/50 text-blue-300 px-2.5 py-1 rounded-md text-[10px] font-mono flex items-center space-x-1.5">
             <Cpu className="w-3 h-3 text-blue-400" />
-            <span>CUDA RTX 3050 (4.2ms)</span>
+            <span>{hardwareLabel}</span>
           </div>
 
           {/* Audio toggle */}

@@ -3,6 +3,18 @@ import axios from 'axios';
 const API_BASE = '/api';
 
 export const api = {
+  // Unified High-Performance Dashboard Aggregate
+  getDashboardData: async (limit = 50) => {
+    const res = await axios.get(`${API_BASE}/stats/dashboard?limit_alerts=${limit}`);
+    return res.data;
+  },
+
+  // Live Hardware / System Telemetry
+  getSystemInfo: async () => {
+    const res = await axios.get(`${API_BASE}/stats/system-info`);
+    return res.data;
+  },
+
   // Stats & Analytics
   getStats: async () => {
     const res = await axios.get(`${API_BASE}/stats`);

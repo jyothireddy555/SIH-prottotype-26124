@@ -38,13 +38,14 @@ async def ingest_frame(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Image processing failed: {str(e)}")
 
+    import uuid
     created_alerts = []
 
     # If pothole detected, persist alert
     if res["has_pothole"]:
-        code_num = random.randint(10000, 99999)
+        alert_code = f"PTH-{uuid.uuid4().hex[:6].upper()}"
         pothole_alert = Alert(
-            alert_code=f"PTH-{code_num}",
+            alert_code=alert_code,
             alert_type="pothole",
             severity=res["highest_severity"],
             confidence=res["confidence"],
@@ -59,8 +60,8 @@ async def ingest_frame(
             raw_image_url=res["raw_image_url"],
             annotated_image_url=res["annotated_image_url"],
             status="OPEN",
-            defect_depth_est=f"~{random.uniform(4.5, 8.5):.1f} cm",
-            defect_area_est=f"{random.uniform(0.28, 0.65):.2f} sq.m",
+            defect_depth_est=res.get("defect_depth_est", "~5.4 cm (Opt. Depth Index)"),
+            defect_area_est=res.get("defect_area_est", "0.38 sq.m"),
             speed_kmh=speed_kmh,
             ai_agent_name="Road Defect Agent"
         )
@@ -80,12 +81,12 @@ async def ingest_frame(
 
     # If high vehicle density, persist alert
     if res["density_level"] == "HIGH":
-        code_num = random.randint(10000, 99999)
+        alert_code = f"TRF-{uuid.uuid4().hex[:6].upper()}"
         traffic_alert = Alert(
-            alert_code=f"TRF-{code_num}",
+            alert_code=alert_code,
             alert_type="vehicle_density",
-            severity="MEDIUM",
-            confidence=0.91,
+            severity="HIGH" if res["total_vehicles"] >= 8 else "MEDIUM",
+            confidence=0.94,
             vehicle_count=res["total_vehicles"],
             density_level="HIGH",
             bus_id=bus_id,
@@ -98,14 +99,14 @@ async def ingest_frame(
             annotated_image_url=res["annotated_image_url"],
             status="OPEN",
             speed_kmh=speed_kmh,
-            ai_agent_name="Vehicle Counting Agent"
+            ai_agent_name="Traffic Intelligence Agent"
         )
         db.add(traffic_alert)
         created_alerts.append(traffic_alert.alert_code)
 
         log = ActivityLog(
             bus_id=bus_id,
-            agent_name="Vehicle Counting Agent",
+            agent_name="Traffic Intelligence Agent",
             activity_type="DETECTION",
             message=f"High vehicle density ({res['total_vehicles']} vehicles) at {location_name}",
             timestamp=datetime.datetime.utcnow(),

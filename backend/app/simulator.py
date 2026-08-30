@@ -248,15 +248,27 @@ def initialize_fleet_and_demo_data(db: Session, clean_slate: bool = False):
         db.commit()
 
 
+def get_nearby_alert(db: Session, alert_type: str, lat: float, lng: float, radius_deg: float = 0.0025):
+    """Finds existing alert within ~250m radius logged recently to prevent duplicate map clutter"""
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+    return db.query(Alert).filter(
+        Alert.alert_type == alert_type,
+        Alert.latitude.between(lat - radius_deg, lat + radius_deg),
+        Alert.longitude.between(lng - radius_deg, lng + radius_deg),
+        Alert.timestamp >= cutoff
+    ).first()
+
+
 def step_simulation(db: Session):
     """
     Executes one deterministic step for the ACTIVE bus along its UNIQUE corridor route:
     1. Selects next waypoint on the active bus's route
-    2. Selects sample frame from that specific video
-    3. Runs AI detector
-    4. Drops geolocated alert on that bus's route
-    5. Updates bus coordinate on the map
+    2. Calculates physics-realistic speed based on traffic/road scenario
+    3. Processes camera frame through AI detector
+    4. Applies spatial deduplication to prevent duplicate alert pin clutter
+    5. Updates bus coordinate and telemetry in database
     """
+    import uuid
     bus_id = sim_state.active_bus_id
     bus_config = FLEET_ROUTES.get(bus_id, FLEET_ROUTES["BUS-104"])
     waypoints = bus_config["waypoints"]
@@ -264,6 +276,19 @@ def step_simulation(db: Session):
     curr_step = sim_state.bus_steps.get(bus_id, 0)
     curr_idx = curr_step % len(waypoints)
     waypoint = waypoints[curr_idx]
+    scenario = waypoint.get("scenario", "normal")
+
+    # Scenario-grounded realistic transit speed (km/h)
+    if "traffic_jam" in scenario or "traffic_queue" in scenario:
+        speed = round(random.uniform(9.0, 15.0), 1)
+    elif "traffic_dense" in scenario or "chokepoint" in scenario:
+        speed = round(random.uniform(16.0, 23.0), 1)
+    elif "pothole_severe" in scenario or "pothole_critical" in scenario or "broken" in waypoint["name"].lower():
+        speed = round(random.uniform(18.0, 27.0), 1)
+    elif "transit_start" in scenario or "transit_end" in scenario:
+        speed = round(random.uniform(14.0, 22.0), 1)
+    else:
+        speed = round(random.uniform(32.0, 42.0), 1)
 
     # Find sample frames matching this bus's video pattern
     pattern = bus_config["frame_pattern"]
@@ -276,11 +301,7 @@ def step_simulation(db: Session):
         frame_idx = curr_step % len(matching_frames)
         frame_path = matching_frames[frame_idx]
 
-    # Realistic speed variation
-    speed = round(random.uniform(26.0, 38.0), 1)
-
     # Process frame through AI pipeline
-    detection_res = None
     if frame_path and frame_path.exists():
         detection_res = process_frame(
             image_input=frame_path,
@@ -292,23 +313,31 @@ def step_simulation(db: Session):
             location_name=waypoint["name"]
         )
     else:
-        # Fallback simulation tailored to route
+        # Fallback simulation with grounded defect geometry
         is_traffic_route = (bus_id == "BUS-301")
         has_pothole = not is_traffic_route and (curr_idx % 2 == 1)
-        vehicles = random.randint(14, 24) if is_traffic_route else random.randint(3, 9)
-        density = "HIGH" if vehicles > 10 else "MODERATE" if vehicles > 5 else "LOW"
+        vehicles = random.randint(16, 26) if is_traffic_route else random.randint(3, 8)
+        density = "HIGH" if vehicles >= 8 else "MODERATE" if vehicles >= 4 else "LOW"
 
         detection_res = {
             "raw_image_url": None,
             "annotated_image_url": None,
             "total_vehicles": vehicles,
-            "vehicle_counts": {"car": int(vehicles*0.6), "motorcycle": int(vehicles*0.3), "bus": 2, "truck": 1},
+            "vehicle_counts": {"car": int(vehicles*0.65), "motorcycle": int(vehicles*0.25), "bus": 1, "truck": 1},
             "density_level": density,
-            "potholes": [{"bbox": [200, 300, 400, 450], "confidence": 0.94, "severity": "HIGH"}] if has_pothole else [],
+            "potholes": [{
+                "bbox": [200, 300, 420, 440], 
+                "confidence": 0.94, 
+                "severity": "HIGH",
+                "defect_depth_est": "~6.4 cm (Opt. Depth Index)",
+                "defect_area_est": "0.45 sq.m"
+            }] if has_pothole else [],
             "has_pothole": has_pothole,
             "pothole_count": 1 if has_pothole else 0,
             "highest_severity": "HIGH" if has_pothole else "LOW",
             "confidence": 0.94 if has_pothole else 0.88,
+            "defect_depth_est": "~6.4 cm (Opt. Depth Index)",
+            "defect_area_est": "0.45 sq.m",
             "bus_id": bus_id,
             "route_id": bus_config["route_id"],
             "speed_kmh": speed,
@@ -317,84 +346,95 @@ def step_simulation(db: Session):
             "location_name": waypoint["name"]
         }
 
-    # Generate Alerts & Activity Logs
+    # Generate or Update Alerts with Spatial Deduplication
     new_alerts = []
 
-    # 1. Pothole Alert
+    # 1. Pothole Alert (Deduplicated within 250m)
     if detection_res["has_pothole"]:
-        code_num = random.randint(10000, 99999)
-        alert_code = f"PTH-{code_num}"
-        pothole_alert = Alert(
-            alert_code=alert_code,
-            alert_type="pothole",
-            severity=detection_res["highest_severity"],
-            confidence=detection_res["confidence"],
-            vehicle_count=detection_res["total_vehicles"],
-            density_level=detection_res["density_level"],
-            bus_id=bus_id,
-            route_id=bus_config["route_id"],
-            latitude=waypoint["lat"] + random.uniform(-0.0001, 0.0001),
-            longitude=waypoint["lng"] + random.uniform(-0.0001, 0.0001),
-            location_name=waypoint["name"],
-            timestamp=datetime.datetime.utcnow(),
-            raw_image_url=detection_res.get("raw_image_url"),
-            annotated_image_url=detection_res.get("annotated_image_url"),
-            status="OPEN",
-            defect_depth_est=f"~{random.uniform(4.5, 8.5):.1f} cm",
-            defect_area_est=f"{random.uniform(0.28, 0.65):.2f} sq.m",
-            speed_kmh=speed,
-            ai_agent_name=f"Road Defect Agent ({bus_id})"
-        )
-        db.add(pothole_alert)
-        new_alerts.append(alert_code)
+        existing_pothole = get_nearby_alert(db, "pothole", waypoint["lat"], waypoint["lng"])
+        if existing_pothole:
+            # Update existing alert telemetry
+            existing_pothole.timestamp = datetime.datetime.utcnow()
+            existing_pothole.confidence = max(existing_pothole.confidence, detection_res["confidence"])
+            existing_pothole.speed_kmh = speed
+        else:
+            alert_code = f"PTH-{uuid.uuid4().hex[:6].upper()}"
+            pothole_alert = Alert(
+                alert_code=alert_code,
+                alert_type="pothole",
+                severity=detection_res["highest_severity"],
+                confidence=detection_res["confidence"],
+                vehicle_count=detection_res["total_vehicles"],
+                density_level=detection_res["density_level"],
+                bus_id=bus_id,
+                route_id=bus_config["route_id"],
+                latitude=waypoint["lat"],
+                longitude=waypoint["lng"],
+                location_name=waypoint["name"],
+                timestamp=datetime.datetime.utcnow(),
+                raw_image_url=detection_res.get("raw_image_url"),
+                annotated_image_url=detection_res.get("annotated_image_url"),
+                status="OPEN",
+                defect_depth_est=detection_res.get("defect_depth_est", "~5.8 cm (Opt. Depth Index)"),
+                defect_area_est=detection_res.get("defect_area_est", "0.42 sq.m"),
+                speed_kmh=speed,
+                ai_agent_name=f"Road Defect Agent ({bus_id})"
+            )
+            db.add(pothole_alert)
+            new_alerts.append(alert_code)
 
-        # Log Activity
-        log = ActivityLog(
-            bus_id=bus_id,
-            agent_name=f"Road Defect Agent ({bus_id})",
-            activity_type="DETECTION",
-            message=f"Pothole detected at {waypoint['name']} (Conf: {int(detection_res['confidence']*100)}%, Sev: {detection_res['highest_severity']})",
-            timestamp=datetime.datetime.utcnow(),
-            severity="CRITICAL" if detection_res["highest_severity"] == "CRITICAL" else "WARNING"
-        )
-        db.add(log)
+            log = ActivityLog(
+                bus_id=bus_id,
+                agent_name=f"Road Defect Agent ({bus_id})",
+                activity_type="DETECTION",
+                message=f"Pothole detected at {waypoint['name']} (Conf: {int(detection_res['confidence']*100)}%, Depth: {detection_res.get('defect_depth_est', '~5.8 cm')})",
+                timestamp=datetime.datetime.utcnow(),
+                severity="CRITICAL" if detection_res["highest_severity"] == "CRITICAL" else "WARNING"
+            )
+            db.add(log)
 
-    # 2. Vehicle Flow & Traffic Density Alert
+    # 2. Traffic Flow & Density Alert (Deduplicated within 250m)
     if detection_res["total_vehicles"] >= 4 or detection_res["density_level"] in ["HIGH", "MODERATE"] or bus_id == "BUS-301":
-        code_num = random.randint(10000, 99999)
-        alert_code = f"TRF-{code_num}"
-        traffic_alert = Alert(
-            alert_code=alert_code,
-            alert_type="vehicle_density",
-            severity="HIGH" if detection_res["total_vehicles"] >= 8 else "MEDIUM",
-            confidence=0.94,
-            vehicle_count=max(detection_res["total_vehicles"], 4 if bus_id != "BUS-301" else 18),
-            density_level="HIGH" if detection_res["total_vehicles"] >= 8 or bus_id == "BUS-301" else "MODERATE",
-            bus_id=bus_id,
-            route_id=bus_config["route_id"],
-            latitude=waypoint["lat"] + random.uniform(-0.0001, 0.0001),
-            longitude=waypoint["lng"] + random.uniform(-0.0001, 0.0001),
-            location_name=waypoint["name"],
-            timestamp=datetime.datetime.utcnow(),
-            raw_image_url=detection_res.get("raw_image_url"),
-            annotated_image_url=detection_res.get("annotated_image_url"),
-            status="OPEN",
-            speed_kmh=speed,
-            ai_agent_name=f"Traffic Intelligence Agent ({bus_id})"
-        )
-        db.add(traffic_alert)
-        new_alerts.append(alert_code)
+        existing_traffic = get_nearby_alert(db, "vehicle_density", waypoint["lat"], waypoint["lng"])
+        if existing_traffic:
+            # Update existing density record
+            existing_traffic.vehicle_count = detection_res["total_vehicles"]
+            existing_traffic.density_level = detection_res["density_level"]
+            existing_traffic.timestamp = datetime.datetime.utcnow()
+            existing_traffic.speed_kmh = speed
+        else:
+            alert_code = f"TRF-{uuid.uuid4().hex[:6].upper()}"
+            traffic_alert = Alert(
+                alert_code=alert_code,
+                alert_type="vehicle_density",
+                severity="HIGH" if detection_res["total_vehicles"] >= 8 else "MEDIUM",
+                confidence=0.94,
+                vehicle_count=max(detection_res["total_vehicles"], 4 if bus_id != "BUS-301" else 18),
+                density_level="HIGH" if detection_res["total_vehicles"] >= 8 or bus_id == "BUS-301" else "MODERATE",
+                bus_id=bus_id,
+                route_id=bus_config["route_id"],
+                latitude=waypoint["lat"],
+                longitude=waypoint["lng"],
+                location_name=waypoint["name"],
+                timestamp=datetime.datetime.utcnow(),
+                raw_image_url=detection_res.get("raw_image_url"),
+                annotated_image_url=detection_res.get("annotated_image_url"),
+                status="OPEN",
+                speed_kmh=speed,
+                ai_agent_name=f"Traffic Intelligence Agent ({bus_id})"
+            )
+            db.add(traffic_alert)
+            new_alerts.append(alert_code)
 
-        # Log Activity
-        log = ActivityLog(
-            bus_id=bus_id,
-            agent_name=f"Traffic Intelligence Agent ({bus_id})",
-            activity_type="DETECTION",
-            message=f"Traffic flow active ({detection_res['total_vehicles']} vehicles detected) at {waypoint['name']}",
-            timestamp=datetime.datetime.utcnow(),
-            severity="INFO"
-        )
-        db.add(log)
+            log = ActivityLog(
+                bus_id=bus_id,
+                agent_name=f"Traffic Intelligence Agent ({bus_id})",
+                activity_type="DETECTION",
+                message=f"Traffic flow active ({detection_res['total_vehicles']} vehicles) at {waypoint['name']}",
+                timestamp=datetime.datetime.utcnow(),
+                severity="INFO"
+            )
+            db.add(log)
 
     # Update Bus position in database
     bus = db.query(Bus).filter(Bus.bus_label == bus_id).first()

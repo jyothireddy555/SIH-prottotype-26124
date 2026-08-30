@@ -1,17 +1,17 @@
 import React from 'react';
-import { 
-  Play, Pause, RotateCcw, FastForward, Upload, 
+import {
+  Play, Pause, RotateCcw, FastForward, Upload,
   Bus, ShieldCheck, Activity, MapPin, Zap, RefreshCw, ChevronDown
 } from 'lucide-react';
 
-export default function Header({ 
-  simStatus, 
-  isPlaying, 
-  onTogglePlay, 
-  onStep, 
-  onReset, 
-  speed, 
-  onChangeSpeed, 
+export default function Header({
+  simStatus,
+  isPlaying,
+  onTogglePlay,
+  onStep,
+  onReset,
+  speed,
+  onChangeSpeed,
   onOpenUpload,
   onRefresh,
   stats,
@@ -28,7 +28,7 @@ export default function Header({
   return (
     <header className="bg-white border-b border-slate-200 px-6 py-3 sticky top-0 z-30 shadow-xs">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        
+
         {/* Brand & System Status */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2.5">
@@ -52,7 +52,7 @@ export default function Header({
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span>AI Engine Active</span>
             </div>
-            
+
             {/* Active Bus Selector Dropdown */}
             <div className="flex items-center space-x-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1">
               <span className="text-[10px] font-bold text-blue-800 uppercase font-mono">NODE:</span>
@@ -77,16 +77,15 @@ export default function Header({
 
         {/* Live Simulation Controls & Actions */}
         <div className="flex items-center flex-wrap gap-2">
-          
+
           {/* Simulation Controller Group */}
           <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 space-x-1">
             <button
               onClick={onTogglePlay}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                isPlaying 
-                  ? 'bg-amber-500 text-white shadow-xs hover:bg-amber-600' 
-                  : 'bg-blue-600 text-white shadow-xs hover:bg-blue-700'
-              }`}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${isPlaying
+                ? 'bg-amber-500 text-white shadow-xs hover:bg-amber-600'
+                : 'bg-blue-600 text-white shadow-xs hover:bg-blue-700'
+                }`}
               title={isPlaying ? "Pause Simulation" : "Start Live Simulation Feed"}
             >
               {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
@@ -101,14 +100,6 @@ export default function Header({
             >
               <FastForward className="w-3.5 h-3.5 text-slate-600" />
               <span>Step</span>
-            </button>
-
-            <button
-              onClick={onReset}
-              className="p-1.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-white hover:shadow-xs transition-all"
-              title="Reset Simulation Baseline"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
             </button>
 
             {/* Speed selection */}
@@ -141,7 +132,7 @@ export default function Header({
             title="Purge all prior alerts & reset simulation for a fresh jury demonstration"
           >
             <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-            <span>Jury Demo Reset</span>
+
           </button>
 
           {/* Test Custom Frame Upload */}

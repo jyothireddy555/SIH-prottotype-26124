@@ -29,35 +29,33 @@ export default function App() {
   const [selectedBus, setSelectedBus] = useState(null);
   const [showAgentsModal, setShowAgentsModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [systemInfo, setSystemInfo] = useState(null);
 
   // Filters for subviews
   const [severityFilter, setSeverityFilter] = useState('ALL');
 
   const simIntervalRef = useRef(null);
 
-  // Fetch initial data
+  // Fetch initial data via unified aggregate endpoint
   const loadAllData = async () => {
     try {
-      const [statsData, alertsData, busesData, logsData, simData] = await Promise.all([
-        api.getStats(),
-        api.getAlerts({ limit: 50 }),
-        api.getFleet(),
-        api.getActivityLogs(),
-        api.getSimStatus()
-      ]);
-      setStats(statsData);
-      setAlerts(alertsData);
-      setBuses(busesData);
-      setActivityLogs(logsData);
-      setSimStatus(simData);
+      const data = await api.getDashboardData(50);
+      if (data) {
+        if (data.stats) setStats(data.stats);
+        if (data.alerts) setAlerts(data.alerts);
+        if (data.fleet) setBuses(data.fleet);
+        if (data.activity_logs) setActivityLogs(data.activity_logs);
+        if (data.sim_status) setSimStatus(data.sim_status);
+        if (data.system_info) setSystemInfo(data.system_info);
+      }
     } catch (e) {
-      console.error('Error fetching data:', e);
+      console.error('Error fetching dashboard data:', e);
     }
   };
 
   useEffect(() => {
     loadAllData();
-    const interval = setInterval(loadAllData, 4000);
+    const interval = setInterval(loadAllData, 3500);
     return () => clearInterval(interval);
   }, []);
 
@@ -225,6 +223,7 @@ export default function App() {
                       activeBus={activeBus}
                       latestDetection={latestDetection}
                       isPlaying={isPlaying}
+                      systemInfo={systemInfo}
                       onTogglePlay={handleTogglePlay}
                       onPlayStateChange={(state) => setIsPlaying(state)}
                       onSelectBus={handleSelectBusId}
