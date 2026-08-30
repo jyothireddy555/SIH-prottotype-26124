@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Layers, Eye, Disc, Car, Bus as BusIcon, Maximize2 } from 'lucide-react';
+import { Layers, Eye, Disc, Car, Bus as BusIcon, Flame, AlertTriangle } from 'lucide-react';
 
 // Fix default Leaflet icon paths
 delete L.Icon.Default.prototype._getIconUrl;
@@ -72,10 +72,10 @@ const createTrafficIcon = (count) => {
     className: 'custom-traffic-marker',
     html: `
       <div class="relative flex flex-col items-center">
-        <div class="bg-amber-500 text-white w-7 h-7 rounded-full shadow-md border-2 border-white flex items-center justify-center">
+        <div class="bg-amber-500 text-white w-7 h-7 rounded-full shadow-md border-2 border-white flex items-center justify-center pulse-traffic">
           <span class="text-[11px] font-bold">🚗</span>
         </div>
-        <div class="bg-white text-amber-800 text-[9px] font-mono font-bold px-1 py-0.2 rounded shadow border border-amber-200 mt-0.5 whitespace-nowrap">
+        <div class="bg-white text-amber-800 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow border border-amber-200 mt-0.5 whitespace-nowrap">
           ${count} veh
         </div>
       </div>
@@ -111,7 +111,6 @@ export default function LiveMap({
 
   // Default transit center
   const defaultCenter = [18.5350, 73.8567];
-  const currentCenter = activeBus ? [activeBus.current_lat, activeBus.current_lng] : defaultCenter;
 
   // 3 Distinct Transit Corridors
   const route115Coords = [
@@ -173,7 +172,7 @@ export default function LiveMap({
           }`}
         >
           <Disc className="w-3.5 h-3.5" />
-          <span>Potholes</span>
+          <span>Potholes ({alerts.filter(a => a.alert_type === 'pothole').length})</span>
         </button>
 
         <button
@@ -183,19 +182,44 @@ export default function LiveMap({
           }`}
         >
           <Car className="w-3.5 h-3.5" />
-          <span>Traffic</span>
+          <span>Traffic ({alerts.filter(a => a.alert_type === 'vehicle_density').length})</span>
         </button>
 
         <button
           onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded-md transition-all ${
-            showHeatmap ? 'bg-purple-50 text-purple-700 font-semibold border border-purple-200' : 'text-slate-500 hover:bg-slate-100'
+          className={`flex items-center space-x-1.5 px-3 py-1 rounded-md transition-all ${
+            showHeatmap 
+              ? 'bg-purple-600 text-white font-semibold shadow-xs ring-2 ring-purple-200' 
+              : 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200'
           }`}
+          title="Toggle Urban Risk & Congestion Heatmap"
         >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Heatmap</span>
+          <Flame className="w-3.5 h-3.5" />
+          <span>Heatmap {showHeatmap ? 'ON' : 'OFF'}</span>
         </button>
       </div>
+
+      {/* Floating Heatmap Intensity Legend (when Heatmap is ON) */}
+      {showHeatmap && (
+        <div className="absolute bottom-4 right-4 z-[1000] bg-white/95 backdrop-blur-xs p-3 rounded-xl border border-slate-200 shadow-xl text-xs space-y-1.5 animate-fadeIn font-sans">
+          <div className="font-bold text-slate-900 border-b border-slate-100 pb-1 flex items-center space-x-1.5">
+            <Flame className="w-4 h-4 text-purple-600" />
+            <span>Urban Hazard Heatmap</span>
+          </div>
+          <div className="flex items-center space-x-2 text-[11px] text-slate-600">
+            <span className="w-3 h-3 rounded-full bg-red-600 shadow-xs inline-block"></span>
+            <span>Critical Pothole Cluster</span>
+          </div>
+          <div className="flex items-center space-x-2 text-[11px] text-slate-600">
+            <span className="w-3 h-3 rounded-full bg-rose-400 shadow-xs inline-block"></span>
+            <span>Moderate Surface Defect</span>
+          </div>
+          <div className="flex items-center space-x-2 text-[11px] text-slate-600">
+            <span className="w-3 h-3 rounded-full bg-amber-500 shadow-xs inline-block"></span>
+            <span>High Vehicular Congestion</span>
+          </div>
+        </div>
+      )}
 
       {/* Actual Leaflet Map */}
       <MapContainer
@@ -246,6 +270,41 @@ export default function LiveMap({
             dashArray: '6, 6'
           }}
         />
+
+        {/* HEATMAP LAYER: Radial Hazard & Congestion Intensity Rings */}
+        {showHeatmap && alerts.map((alert) => {
+          const isPothole = alert.alert_type === 'pothole';
+          const isCritical = alert.severity === 'CRITICAL';
+          const fillColor = isPothole ? (isCritical ? '#DC2626' : '#F43F5E') : '#F59E0B';
+          const radiusMeters = isPothole ? (isCritical ? 550 : 380) : (alert.vehicle_count > 20 ? 700 : 450);
+
+          return (
+            <React.Fragment key={`heat-${alert.id}`}>
+              {/* Outer soft glow ring */}
+              <Circle
+                center={[alert.latitude, alert.longitude]}
+                radius={radiusMeters}
+                pathOptions={{
+                  fillColor: fillColor,
+                  fillOpacity: 0.18,
+                  stroke: false
+                }}
+              />
+              {/* Inner intense core ring */}
+              <Circle
+                center={[alert.latitude, alert.longitude]}
+                radius={radiusMeters * 0.45}
+                pathOptions={{
+                  fillColor: fillColor,
+                  fillOpacity: 0.38,
+                  color: fillColor,
+                  weight: 1.5,
+                  opacity: 0.6
+                }}
+              />
+            </React.Fragment>
+          );
+        })}
 
         {/* Bus Fleet Markers */}
         {showBuses && buses.map((bus) => {
