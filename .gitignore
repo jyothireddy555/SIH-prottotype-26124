@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Node & Frontend dependencies
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Large media files exceeding GitHub 100MB limit
+*.mp4
+*.mkv
+*.avi
+*.mov
+backend/data/videos/*.mp4
+backend/data/uploads/*.jpg
+
+# PyTorch & YOLO weight files (if large)
+weights/*.pt
+yolov8*.pt
+*.pt
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.gemini/
