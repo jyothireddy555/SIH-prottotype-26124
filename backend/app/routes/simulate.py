@@ -43,12 +43,13 @@ def get_simulation_status():
     }
 
 
-@router.post("/set-bus")
-def set_sim_bus(bus_id: str = Query(...)):
-    """Switch active simulated bus and corresponding video stream"""
-    sim_state.set_active_bus(bus_id)
+@router.post("/set-city")
+def set_sim_city(city: str = Query(...)):
+    """Switch active city and default bus"""
+    sim_state.set_active_city(city)
     return {
         "status": "success",
+        "active_city_id": sim_state.active_city_id,
         "active_bus_id": sim_state.active_bus_id,
         "active_bus_plate": sim_state.active_bus_plate,
         "active_route": sim_state.active_route_name,
@@ -56,10 +57,39 @@ def set_sim_bus(bus_id: str = Query(...)):
     }
 
 
+@router.post("/set-bus")
+def set_sim_bus(bus_id: str = Query(...)):
+    """Switch active simulated bus and corresponding video stream"""
+    sim_state.set_active_bus(bus_id)
+    return {
+        "status": "success",
+        "active_city_id": sim_state.active_city_id,
+        "active_bus_id": sim_state.active_bus_id,
+        "active_bus_plate": sim_state.active_bus_plate,
+        "active_route": sim_state.active_route_name,
+        "video_stream_url": getattr(sim_state, "video_stream_url", "/videos/bus_dashcam_feed.mp4")
+    }
+
+
+@router.post("/set-camera")
+def set_sim_camera(camera_id: str = Query(...)):
+    """Switch active camera angle (CAM-1-FRONT, CAM-2-SIDE, CAM-3-REAR)"""
+    sim_state.set_active_camera(camera_id)
+    return {
+        "status": "success",
+        "active_camera_id": sim_state.active_camera_id
+    }
+
+
 @router.post("/step")
-def trigger_step(db: Session = Depends(get_db)):
-    """Manually step simulation by 1 frame / waypoint"""
-    result = step_simulation(db)
+def trigger_step(
+    db: Session = Depends(get_db),
+    progress: Optional[float] = Query(None, description="Video progress 0.0-1.0 for timeline-synced waypoint selection"),
+    lat: Optional[float] = Query(None, description="Exact interpolated GPS latitude from frontend"),
+    lng: Optional[float] = Query(None, description="Exact interpolated GPS longitude from frontend")
+):
+    """Manually step simulation by 1 frame / waypoint, optionally synced to video timeline progress"""
+    result = step_simulation(db, video_progress=progress, exact_lat=lat, exact_lng=lng)
     return result
 
 
@@ -100,15 +130,30 @@ def ingest_live_video_frame(payload: LiveFramePayload, db: Session = Depends(get
 
     created_alerts = []
     
-    # 1. If defect detected, persist with spatial deduplication
+    # 1. If defect detected, persist with spatial deduplication & sighting counter
     if res["has_pothole"]:
         existing_pothole = get_nearby_alert(db, "pothole", gps_lat, gps_lng)
         if existing_pothole:
+            existing_pothole.sighting_count = (existing_pothole.sighting_count or 1) + 1
+            existing_pothole.last_seen_at = datetime.datetime.utcnow()
             existing_pothole.timestamp = datetime.datetime.utcnow()
-            existing_pothole.confidence = max(existing_pothole.confidence, res["confidence"])
+            existing_pothole.confidence = min(0.99, round(max(existing_pothole.confidence, res["confidence"]) + 0.01, 2))
             existing_pothole.speed_kmh = payload.speed_kmh
+            
+            # Update confirming buses list
+            existing_buses = set([b.strip() for b in (existing_pothole.confirming_buses or existing_pothole.bus_id).split(",") if b.strip()])
+            existing_buses.add(payload.bus_id)
+            existing_pothole.confirming_buses = ", ".join(sorted(list(existing_buses)))
+            
+            if existing_pothole.sighting_count >= 2 and existing_pothole.status == "OPEN":
+                existing_pothole.status = "VERIFIED"
+
+            if res.get("annotated_image_url"):
+                existing_pothole.annotated_image_url = res.get("annotated_image_url")
+                existing_pothole.raw_image_url = res.get("raw_image_url")
         else:
             alert_code = f"PTH-{uuid.uuid4().hex[:6].upper()}"
+            now = datetime.datetime.utcnow()
             pothole_alert = Alert(
                 alert_code=alert_code,
                 alert_type="pothole",
@@ -121,7 +166,11 @@ def ingest_live_video_frame(payload: LiveFramePayload, db: Session = Depends(get
                 latitude=gps_lat,
                 longitude=gps_lng,
                 location_name=loc_name,
-                timestamp=datetime.datetime.utcnow(),
+                timestamp=now,
+                first_detected_at=now,
+                last_seen_at=now,
+                sighting_count=1,
+                confirming_buses=payload.bus_id,
                 raw_image_url=res.get("raw_image_url"),
                 annotated_image_url=res.get("annotated_image_url"),
                 status="OPEN",
@@ -138,7 +187,7 @@ def ingest_live_video_frame(payload: LiveFramePayload, db: Session = Depends(get
                 agent_name=f"Road Defect Agent ({payload.bus_id})",
                 activity_type="DETECTION",
                 message=f"Pothole detected live at {loc_name} (Conf: {int(res['confidence']*100)}%, Sev: {res['highest_severity']})",
-                timestamp=datetime.datetime.utcnow(),
+                timestamp=now,
                 severity="CRITICAL" if res["highest_severity"] == "CRITICAL" else "WARNING"
             )
             db.add(log)

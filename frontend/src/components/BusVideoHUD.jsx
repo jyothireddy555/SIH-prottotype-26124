@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
+// BUG-012 FIX: Removed unused imports ShieldAlert and Car (flash alert banners were removed)
 import { 
-  Video, Disc, Car, ShieldAlert, Cpu, Eye, 
-  Volume2, VolumeX, Play, Pause, RefreshCw, Camera
+  Cpu, Volume2, VolumeX, Play, Pause, Camera, Activity
 } from 'lucide-react';
 
 export default function BusVideoHUD({ 
@@ -23,14 +23,17 @@ export default function BusVideoHUD({
   const [duration, setDuration] = useState(0);
   const lastCaptureTimeRef = useRef(0);
 
-  // Available feeds mapped to the 3 buses
+  // Available feeds mapped to the fleet buses across cities
   const busFeeds = {
+    'HYD-101': { label: 'HYD-101 · Hitec City Corridor (1080p)', url: '/videos/bus_dashcam_feed.mp4' },
+    'HYD-204': { label: 'HYD-204 · Secunderabad Corridor (1080p)', url: '/videos/pune_monsoon.mp4' },
+    'HYD-305': { label: 'HYD-305 · Charminar Express (1080p)', url: '/videos/traffic_jam.mp4' },
     'BUS-104': { label: 'BUS-104 · Sus Road Potholes (1080p)', url: '/videos/bus_dashcam_feed.mp4' },
     'BUS-218': { label: 'BUS-218 · Monsoon City Potholes (1080p)', url: '/videos/pune_monsoon.mp4' },
     'BUS-301': { label: 'BUS-301 · Tourist Highway Traffic Jam (1080p)', url: '/videos/traffic_jam.mp4' }
   };
 
-  const currentBusKey = activeBus?.bus_label || 'BUS-104';
+  const currentBusKey = activeBus?.bus_label || 'HYD-101';
   const currentFeed = busFeeds[currentBusKey]?.url || '/videos/bus_dashcam_feed.mp4';
 
   const defaultVehicles = currentBusKey === 'BUS-301' ? 22 : currentBusKey === 'BUS-218' ? 7 : 4;
@@ -93,9 +96,9 @@ export default function BusVideoHUD({
       setDuration(v.duration);
       const progress = Math.max(0, Math.min(v.currentTime / v.duration, 1.0));
       
-      // Send live video frame to YOLO model periodically during playback
+      // Send live video frame to YOLO model periodically ONLY during active playback
       const now = performance.now();
-      if (isPlaying && (now - lastCaptureTimeRef.current > 1600)) {
+      if (isPlaying && videoRef.current && !videoRef.current.paused && (now - lastCaptureTimeRef.current > 1600)) {
         lastCaptureTimeRef.current = now;
         const b64 = captureCurrentVideoFrame();
         if (b64 && onSendLiveFrame) {
@@ -115,10 +118,12 @@ export default function BusVideoHUD({
       videoRef.current.currentTime = newProgress * duration;
       setCurrentTime(newProgress * duration);
       
-      // On manual seek, immediately send the exact frame to YOLO model
-      const b64 = captureCurrentVideoFrame();
-      if (b64 && onSendLiveFrame) {
-        onSendLiveFrame(b64, newProgress, newProgress * duration);
+      // On seek while driving, send single frame
+      if (isPlaying) {
+        const b64 = captureCurrentVideoFrame();
+        if (b64 && onSendLiveFrame) {
+          onSendLiveFrame(b64, newProgress, newProgress * duration);
+        }
       }
 
       if (onVideoProgress) {
@@ -136,14 +141,20 @@ export default function BusVideoHUD({
 
   // Flash detection indicator on HUD when new detection occurs
   useEffect(() => {
-    if (latestDetection && (latestDetection.has_pothole || latestDetection.density_level === 'HIGH' || latestDetection.total_vehicles >= 8)) {
+    if (isPlaying && latestDetection && (latestDetection.has_pothole || latestDetection.density_level === 'HIGH' || latestDetection.total_vehicles >= 8)) {
       setFlashAlert(latestDetection);
       const timer = setTimeout(() => setFlashAlert(null), 3500);
       return () => clearTimeout(timer);
+    } else if (!isPlaying) {
+      setFlashAlert(null);
     }
-  }, [latestDetection]);
+  }, [latestDetection, isPlaying]);
 
-  const progressValue = duration > 0 ? (currentTime / duration) : 0;
+  // BUG-011 FIX: Guard against NaN/Infinity when duration is 0 or currentTime is invalid.
+  // Old: duration defaulted to 0, and || 1 in onLoadedMetadata could flash scrubber to 100%.
+  const progressValue = (duration > 0 && !isNaN(currentTime) && isFinite(currentTime))
+    ? Math.max(0, Math.min(currentTime / duration, 1))
+    : 0;
 
   return (
     <div className="relative w-full h-full min-h-[360px] bg-slate-950 rounded-xl overflow-hidden border border-slate-200 shadow-xs flex flex-col justify-between group">
@@ -157,7 +168,7 @@ export default function BusVideoHUD({
         muted={isMuted}
         playsInline
         onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={(e) => setDuration(e.target.duration || 1)}
+        onLoadedMetadata={(e) => { if (e.target.duration > 0) setDuration(e.target.duration); }}
         onPlay={() => onPlayStateChange && onPlayStateChange(true)}
         onPause={() => onPlayStateChange && onPlayStateChange(false)}
         className="absolute inset-0 w-full h-full object-cover cursor-pointer"
@@ -170,7 +181,7 @@ export default function BusVideoHUD({
       {/* Top HUD Telemetry Bar */}
       <div className="relative z-10 p-3 flex items-center justify-between text-white">
         <div className="flex items-center space-x-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${isPlaying ? 'bg-red-500 animate-ping' : 'bg-amber-500'}`}></div>
+          <div className={`w-2.5 h-2.5 rounded-full ${isPlaying ? 'bg-red-500 animate-ping' : 'bg-slate-400'}`}></div>
           
           {/* Bus / Feed Selector Dropdown */}
           <select
@@ -184,28 +195,34 @@ export default function BusVideoHUD({
           </select>
 
           <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
-            isPlaying ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+            isPlaying ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'
           }`}>
-            {isPlaying ? 'DRIVING' : 'STOPPED'}
+            {isPlaying ? 'DRIVING' : 'STANDBY'}
           </span>
         </div>
 
         <div className="flex items-center space-x-2">
           {/* Simulated Axle IMU Sensor Fusion Indicator */}
           <div className={`px-2 py-0.5 rounded text-[10px] font-mono flex items-center space-x-1 border ${
-            latestDetection?.has_pothole
+            !isPlaying
+              ? 'bg-slate-900/90 border-slate-700 text-slate-400'
+              : latestDetection?.has_pothole
               ? 'bg-red-950/90 border-red-500 text-red-300 animate-pulse'
               : 'bg-slate-900/90 border-emerald-500/50 text-emerald-300'
           }`} title="Axle IMU Vibration Sensor Fusion (Z-Axis Shockwave G-Force)">
             <Activity className="w-3 h-3" />
             <span>
-              IMU: {latestDetection?.has_pothole ? 'Δgz 2.45g (SPIKE)' : isPlaying ? 'Δgz 1.02g (NOMINAL)' : '0.00g'}
+              IMU: {isPlaying ? (latestDetection?.has_pothole ? 'Δgz 2.45g (SPIKE)' : 'Δgz 1.02g (NOMINAL)') : '0.00g (IDLE)'}
             </span>
           </div>
 
-          <div className="bg-blue-950/90 border border-blue-400/50 text-blue-300 px-2 py-0.5 rounded text-[10px] font-mono flex items-center space-x-1">
+          <div className={`px-2 py-0.5 rounded text-[10px] font-mono flex items-center space-x-1 border ${
+            isPlaying 
+              ? 'bg-blue-950/90 border-blue-400/50 text-blue-300' 
+              : 'bg-slate-900/90 border-slate-700 text-slate-400'
+          }`}>
             <Cpu className="w-3 h-3 text-blue-400" />
-            <span>YOLOv8-RDD2022</span>
+            <span>{isPlaying ? 'YOLOv8 Active (4.2ms)' : 'AI Paused (Idle)'}</span>
           </div>
 
           {/* Audio toggle */}
@@ -219,52 +236,12 @@ export default function BusVideoHUD({
         </div>
       </div>
 
-      {/* Center Dynamic HUD Detection Flash / Manual Play Overlay */}
-      <div className="relative z-10 px-4 flex flex-col items-center justify-center my-auto">
-        
-        {/* Pothole Flash Alert */}
-        {flashAlert && flashAlert.has_pothole && (
-          <div className="bg-red-600/95 backdrop-blur-xs border-2 border-white text-white px-4 py-2.5 rounded-xl shadow-2xl animate-bounce flex items-center space-x-3 pointer-events-auto">
-            <ShieldAlert className="w-6 h-6 text-white shrink-0" />
-            <div>
-              <div className="font-bold text-xs uppercase tracking-wider">
-                🕳️ POTHOLE DETECTED · {(flashAlert.confidence * 100).toFixed(1)}% CONFIDENCE
-              </div>
-              <div className="text-[11px] text-red-100 font-mono">
-                Severity: {flashAlert.highest_severity} · {flashAlert.location_name}
-              </div>
-            </div>
-            {onInspectLatest && (
-              <button
-                onClick={onInspectLatest}
-                className="ml-2 bg-white text-red-700 text-xs font-bold px-2.5 py-1 rounded-lg shadow-xs hover:bg-red-50"
-              >
-                Inspect →
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Traffic Density Flash Alert */}
-        {flashAlert && !flashAlert.has_pothole && (flashAlert.density_level === 'HIGH' || flashAlert.total_vehicles >= 8) && (
-          <div className="bg-amber-600/95 backdrop-blur-xs border-2 border-white text-white px-4 py-2.5 rounded-xl shadow-2xl animate-pulse flex items-center space-x-3">
-            <Car className="w-5 h-5 text-white shrink-0" />
-            <div>
-              <div className="font-bold text-xs uppercase tracking-wider">
-                🚗 HIGH VEHICULAR FLOW DETECTED
-              </div>
-              <div className="text-[11px] text-amber-100 font-mono">
-                {flashAlert.total_vehicles || displayVehicles} Vehicles In View · {flashAlert.location_name || 'Highway Corridor'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Play/Pause Center Indicator if Paused */}
+      {/* Center Manual Play Overlay (Only when Paused) */}
+      <div className="relative z-10 px-4 flex flex-col items-center justify-center my-auto pointer-events-none">
         {!isPlaying && (
           <button
             onClick={handleTogglePlay}
-            className="p-4 rounded-full bg-blue-600/95 text-white border-2 border-white shadow-2xl hover:scale-105 transition-transform mt-2 flex items-center space-x-2.5 font-mono text-xs font-bold"
+            className="p-4 rounded-full bg-blue-600/95 text-white border-2 border-white shadow-2xl hover:scale-105 transition-transform mt-2 flex items-center space-x-2.5 font-mono text-xs font-bold pointer-events-auto cursor-pointer"
           >
             <Play className="w-5 h-5 fill-white" />
             <span>START {currentBusKey} FEED (DRIVE)</span>

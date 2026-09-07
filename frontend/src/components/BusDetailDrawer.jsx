@@ -7,7 +7,12 @@ export default function BusDetailDrawer({ bus, onClose, alerts = [] }) {
   const busAlerts = alerts.filter(a => a.bus_id === bus.bus_label);
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white border-l border-slate-200 shadow-2xl flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right duration-200">
+    <>
+      <div 
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-900/20 backdrop-blur-[1px] z-[9998] transition-opacity"
+      />
+      <div className="fixed inset-y-0 right-0 z-[9999] w-full max-w-md bg-white border-l border-slate-200 shadow-2xl flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right duration-200">
       
       {/* Header */}
       <div className="p-5 border-b border-slate-200 sticky top-0 bg-white z-10 flex items-center justify-between">
@@ -120,5 +125,6 @@ export default function BusDetailDrawer({ bus, onClose, alerts = [] }) {
       </div>
 
     </div>
+    </>
   );
 }

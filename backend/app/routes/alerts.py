@@ -11,6 +11,8 @@ router = APIRouter(prefix="/api/alerts", tags=["Alerts"])
 
 @router.get("", response_model=List[AlertOut])
 def get_alerts(
+    city: Optional[str] = None,
+    category: Optional[str] = None,
     alert_type: Optional[str] = None,
     severity: Optional[str] = None,
     bus_id: Optional[str] = None,
@@ -18,11 +20,29 @@ def get_alerts(
     limit: int = 50,
     db: Session = Depends(get_db)
 ):
-    """List recent alerts with optional filters"""
+    """List recent alerts with optional multi-city and category filters"""
     query = db.query(Alert)
     
+    if city and isinstance(city, str):
+        query = query.filter(Alert.city_id == city.lower())
     if alert_type and isinstance(alert_type, str):
         query = query.filter(Alert.alert_type == alert_type)
+    if category and isinstance(category, str):
+        # Category grouping
+        cat = category.lower()
+        if cat == "road":
+            query = query.filter(Alert.alert_type.in_([
+                "pothole", "water_logging", "road_crack", "road_damage", 
+                "garbage", "missing_divider", "zebra_fading"
+            ]))
+        elif cat == "traffic":
+            query = query.filter(Alert.alert_type.in_(["vehicle_density", "congestion"]))
+        elif cat == "safety":
+            query = query.filter(Alert.alert_type.in_([
+                "overloaded_two_wheeler", "helmet_violation", "rash_driving", "accident"
+            ]))
+        elif cat == "security" or cat == "watchlist":
+            query = query.filter(Alert.alert_type == "watchlist_match")
     if severity and isinstance(severity, str):
         query = query.filter(Alert.severity == severity)
     if bus_id and isinstance(bus_id, str):

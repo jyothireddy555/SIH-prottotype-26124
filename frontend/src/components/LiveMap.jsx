@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Layers, Eye, Disc, Car, Bus as BusIcon, Flame, AlertTriangle } from 'lucide-react';
+import { Layers, Eye, Disc, Car, Bus as BusIcon, Flame, AlertTriangle, Droplets } from 'lucide-react';
 
 // Fix default Leaflet icon paths
 delete L.Icon.Default.prototype._getIconUrl;
@@ -11,8 +11,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// Custom SVG Icons for Light Theme
+// Custom 3D SVG Bus Icon
 const createBusIcon = (label, speed, isMoving, isActive) => {
+  const uid = `${label}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const badgeColor = isMoving 
     ? 'bg-emerald-50 text-emerald-800 border-emerald-300 ring-2 ring-emerald-400' 
     : isActive 
@@ -25,70 +26,135 @@ const createBusIcon = (label, speed, isMoving, isActive) => {
     : '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block mr-1"></span>';
   const speedText = isMoving ? `${speed} km/h` : 'STOPPED';
 
-  const busColor = label === 'BUS-218' ? 'bg-indigo-600' : label === 'BUS-301' ? 'bg-purple-600' : 'bg-blue-600';
+  const isHyd = label.startsWith('HYD');
+  const color1 = isHyd ? '#059669' : label === 'BUS-218' ? '#4F46E5' : label === 'BUS-301' ? '#7C3AED' : '#2563EB';
+  const color2 = isHyd ? '#047857' : label === 'BUS-218' ? '#3730A3' : label === 'BUS-301' ? '#5B21B6' : '#1D4ED8';
+  const color3 = isHyd ? '#064E3B' : label === 'BUS-218' ? '#312E81' : label === 'BUS-301' ? '#4C1D95' : '#1E3A8A';
 
   return L.divIcon({
     className: 'custom-bus-marker',
     html: `
-      <div class="relative flex flex-col items-center cursor-pointer transition-transform hover:scale-110">
-        <div class="${busColor} text-white p-2 rounded-xl shadow-lg border-2 border-white flex items-center justify-center ${pulseClass}">
-          <!-- Authentic Public Transit Bus Silhouette Icon -->
-          <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4 16c0 .88.39 1.67 1 2.22V20a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h8v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm1.5-6H6V6h12v5z"/>
+      <div class="relative flex flex-col items-center cursor-pointer transition-transform hover:scale-115">
+        <div class="relative flex items-center justify-center ${pulseClass}">
+          <svg class="w-11 h-11 filter drop-shadow-[0_8px_14px_rgba(0,0,0,0.35)]" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="roofGrad_${uid}" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+                <stop offset="100%" stop-color="#CBD5E1"/>
+              </linearGradient>
+              <linearGradient id="bodyGrad_${uid}" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="${color1}"/>
+                <stop offset="50%" stop-color="${color2}"/>
+                <stop offset="100%" stop-color="${color3}"/>
+              </linearGradient>
+              <linearGradient id="tireGrad_${uid}" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#334155"/>
+                <stop offset="100%" stop-color="#0F172A"/>
+              </linearGradient>
+            </defs>
+
+            <ellipse cx="32" cy="56" rx="24" ry="5.5" fill="#000000" fill-opacity="0.32"/>
+            <rect x="10" y="44" width="7" height="11" rx="3.5" fill="url(#tireGrad_${uid})" stroke="#64748B" stroke-width="0.8"/>
+            <circle cx="13.5" cy="49.5" r="2" fill="#94A3B8"/>
+            <rect x="47" y="44" width="7" height="11" rx="3.5" fill="url(#tireGrad_${uid})" stroke="#64748B" stroke-width="0.8"/>
+            <circle cx="50.5" cy="49.5" r="2" fill="#94A3B8"/>
+            <rect x="6" y="38" width="6" height="9" rx="2.5" fill="url(#tireGrad_${uid})"/>
+            <rect x="52" y="38" width="6" height="9" rx="2.5" fill="url(#tireGrad_${uid})"/>
+            <path d="M11 46 L53 46 L50 51 L14 51 Z" fill="#0F172A"/>
+
+            <path d="M10 18 C10 12, 14 8, 20 8 L44 8 C50 8, 54 12, 54 18 L54 44 C54 47.5, 50.5 49.5, 46 49.5 L18 49.5 C13.5 49.5, 10 47.5, 10 44 Z" fill="url(#bodyGrad_${uid})" stroke="#FFFFFF" stroke-width="1.6"/>
+            <path d="M14 10 C16 8.8, 22 8.2, 32 8.2 C42 8.2, 48 8.8, 50 10 L48 13.5 L16 13.5 Z" fill="url(#roofGrad_${uid})"/>
+            <rect x="22" y="5" width="20" height="4.5" rx="2" fill="#F8FAFC" stroke="#94A3B8" stroke-width="0.8"/>
+
+            <rect x="18" y="11.5" width="28" height="5.5" rx="1.5" fill="#0F172A" stroke="#334155" stroke-width="0.6"/>
+            <text x="32" y="15.8" fill="#F59E0B" font-size="3.6" font-family="monospace" font-weight="900" text-anchor="middle">${label}</text>
+
+            <path d="M15 19 L49 19 L47 31 L17 31 Z" fill="#0284C7" stroke="#E2E8F0" stroke-width="1.2"/>
+            <line x1="26" y1="19" x2="25" y2="31" stroke="#E2E8F0" stroke-width="1"/>
+            <line x1="38" y1="19" x2="39" y2="31" stroke="#E2E8F0" stroke-width="1"/>
           </svg>
         </div>
-        <div class="${badgeColor} text-[10px] font-bold px-1.5 py-0.5 rounded shadow border mt-1 whitespace-nowrap flex items-center">
+
+        <div class="${badgeColor} text-[10px] font-bold px-2 py-0.5 rounded shadow-md border mt-0.5 whitespace-nowrap flex items-center">
           ${statusDot}
-          <span>🚌 ${label} · ${speedText}</span>
+          <span>${label} · ${speedText}</span>
         </div>
       </div>
     `,
-    iconSize: [48, 54],
-    iconAnchor: [24, 27]
+    iconSize: [56, 62],
+    iconAnchor: [28, 31]
   });
 };
 
-const createPotholeIcon = (severity, confidence) => {
-  const isCritical = severity === 'CRITICAL';
-  const bgColor = isCritical ? 'bg-red-600' : 'bg-rose-500';
+// Generic Custom Incident Marker Icon Generator for all Edge-AI Types
+const createIncidentIcon = (alert) => {
+  const type = alert.alert_type;
+  const isP0 = alert.priority_level === 'P0' || type === 'watchlist_match' || type === 'accident';
+  const isP1 = alert.priority_level === 'P1' || alert.severity === 'CRITICAL';
+  
+  let emoji = '🕳';
+  let bgColor = 'bg-rose-600';
+  let pulseClass = '';
+
+  if (type === 'watchlist_match') {
+    emoji = '🚨';
+    bgColor = 'bg-red-600';
+    pulseClass = 'animate-bounce ring-4 ring-red-400';
+  } else if (type === 'accident') {
+    emoji = '💥';
+    bgColor = 'bg-red-600';
+    pulseClass = 'animate-ping ring-4 ring-red-400';
+  } else if (type === 'water_logging') {
+    emoji = '🌊';
+    bgColor = 'bg-blue-600';
+  } else if (type === 'missing_divider') {
+    emoji = '🚧';
+    bgColor = 'bg-amber-600';
+  } else if (type === 'road_crack' || type === 'road_damage') {
+    emoji = '⚡';
+    bgColor = 'bg-orange-600';
+  } else if (type === 'garbage') {
+    emoji = '🗑';
+    bgColor = 'bg-stone-700';
+  } else if (type === 'zebra_fading') {
+    emoji = '🦓';
+    bgColor = 'bg-yellow-600';
+  } else if (type === 'overloaded_two_wheeler') {
+    emoji = '🛵';
+    bgColor = 'bg-red-700';
+  } else if (type === 'helmet_violation') {
+    emoji = '⛑';
+    bgColor = 'bg-amber-700';
+  } else if (type === 'vehicle_density' || type === 'congestion') {
+    emoji = '🚗';
+    bgColor = 'bg-amber-500';
+  }
+
+  const countBadge = (alert.sighting_count || 1) > 1 
+    ? `<span class="ml-1 bg-amber-200 text-amber-900 px-1 rounded font-extrabold text-[8px]">${alert.sighting_count}x</span>` 
+    : '';
+
   return L.divIcon({
-    className: 'custom-pothole-marker',
+    className: 'custom-incident-marker',
     html: `
-      <div class="relative flex flex-col items-center">
-        <div class="${bgColor} text-white w-7 h-7 rounded-full shadow-md border-2 border-white flex items-center justify-center pulse-pothole">
-          <span class="text-[11px] font-bold">🕳</span>
+      <div class="relative flex flex-col items-center cursor-pointer">
+        <div class="${bgColor} text-white w-7 h-7 rounded-full shadow-md border-2 border-white flex items-center justify-center ${pulseClass}">
+          <span class="text-[11px] font-bold">${emoji}</span>
         </div>
-        <div class="bg-white text-red-700 text-[9px] font-mono font-bold px-1 py-0.2 rounded shadow border border-red-200 mt-0.5 whitespace-nowrap">
-          ${(confidence * 100).toFixed(0)}% [${severity}]
+        <div class="bg-white text-slate-800 text-[9px] font-mono font-bold px-1.5 py-0.2 rounded shadow border border-slate-200 mt-0.5 whitespace-nowrap flex items-center">
+          <span>${alert.alert_code || alert.alert_type}</span>
+          ${countBadge}
         </div>
       </div>
     `,
-    iconSize: [32, 38],
-    iconAnchor: [16, 19]
+    iconSize: [36, 42],
+    iconAnchor: [18, 21]
   });
 };
 
-const createTrafficIcon = (count) => {
-  return L.divIcon({
-    className: 'custom-traffic-marker',
-    html: `
-      <div class="relative flex flex-col items-center">
-        <div class="bg-amber-500 text-white w-7 h-7 rounded-full shadow-md border-2 border-white flex items-center justify-center pulse-traffic">
-          <span class="text-[11px] font-bold">🚗</span>
-        </div>
-        <div class="bg-white text-amber-800 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow border border-amber-200 mt-0.5 whitespace-nowrap">
-          ${count} veh
-        </div>
-      </div>
-    `,
-    iconSize: [32, 38],
-    iconAnchor: [16, 19]
-  });
-};
-
-// Helper to calculate smooth continuous GPS position along polyline based on video progress (0.0 to 1.0)
+// Helper for GPS interpolation
 export function interpolatePositionAlongRoute(coords, progress) {
-  if (!coords || coords.length === 0) return [18.5204, 73.8567];
+  if (!coords || coords.length === 0) return [17.4435, 78.3772];
   if (coords.length === 1) return coords[0];
   const p = Math.max(0, Math.min(progress, 0.99999));
   
@@ -105,289 +171,255 @@ export function interpolatePositionAlongRoute(coords, progress) {
   return [lat, lng];
 }
 
-// Component to dynamically re-center map when active bus moves
-function MapUpdater({ lat, lng, isMoving }) {
+// MapUpdater: Centers map when selectedIncident, bus move, or city switches
+function MapUpdater({ lat, lng, isMoving, selectedIncident, activeCity }) {
   const map = useMap();
+  const prevCityRef = useRef(activeCity);
+  
   useEffect(() => {
-    if (lat && lng && isMoving) {
+    if (prevCityRef.current !== activeCity) {
+      prevCityRef.current = activeCity;
+      if (activeCity === 'hyderabad') {
+        map.flyTo([17.4435, 78.3772], 13, { duration: 1.5 });
+      } else {
+        map.flyTo([18.5380, 73.7850], 13, { duration: 1.5 });
+      }
+      return;
+    }
+
+    if (selectedIncident && selectedIncident.latitude && selectedIncident.longitude) {
+      map.flyTo([selectedIncident.latitude, selectedIncident.longitude], 15, { duration: 1.2 });
+    } else if (lat && lng && isMoving) {
       map.panTo([lat, lng], { animate: true, duration: 0.8 });
     }
-  }, [lat, lng, isMoving, map]);
+  }, [lat, lng, isMoving, selectedIncident, activeCity, map]);
+
   return null;
 }
 
-export default function LiveMap({ 
-  alerts = [], 
-  buses = [], 
-  activeBus, 
+// === HYDERABAD ROUTE COORDINATES ===
+export const route216Coords = [
+  [17.4400, 78.3480],
+  [17.4425, 78.3530],
+  [17.4460, 78.3610],
+  [17.4505, 78.3808],
+  [17.4475, 78.3815],
+  [17.4430, 78.3820],
+  [17.4380, 78.3850],
+  [17.4310, 78.3900],
+  [17.4350, 78.3750],
+  [17.4260, 78.3580],
+  [17.4180, 78.3440],
+  [17.4160, 78.3410]
+];
+
+export const route10HCoords = [
+  [17.3916, 78.4398],
+  [17.3980, 78.4480],
+  [17.4040, 78.4550],
+  [17.4090, 78.4620],
+  [17.4150, 78.4690],
+  [17.4220, 78.4760],
+  [17.4310, 78.4870],
+  [17.4390, 78.4980]
+];
+
+export const route5KCoords = [
+  [17.3616, 78.4747],
+  [17.3710, 78.4820],
+  [17.3820, 78.4860],
+  [17.3750, 78.5020],
+  [17.3680, 78.5240],
+  [17.3590, 78.5480]
+];
+
+// === PUNE ROUTE COORDINATES ===
+export const route115Coords = [
+  [18.5380, 73.7850],
+  [18.5420, 73.7815],
+  [18.5460, 73.7780],
+  [18.5500, 73.7745],
+  [18.5540, 73.7710],
+  [18.5580, 73.7675],
+  [18.5620, 73.7640],
+  [18.5660, 73.7605],
+  [18.5700, 73.7570],
+  [18.5740, 73.7535],
+  [18.5780, 73.7500],
+  [18.5820, 73.7465],
+  [18.5860, 73.7430],
+  [18.5900, 73.7395],
+  [18.5940, 73.7360],
+  [18.5980, 73.7325],
+  [18.6020, 73.7290]
+];
+
+export const route500DCoords = [
+  [18.5284, 73.8740],
+  [18.5320, 73.8790],
+  [18.5360, 73.8845],
+  [18.5400, 73.8900],
+  [18.5440, 73.8955],
+  [18.5480, 73.9010],
+  [18.5520, 73.9065],
+  [18.5560, 73.9120],
+  [18.5600, 73.9175],
+  [18.5640, 73.9230],
+  [18.5680, 73.9285],
+  [18.5720, 73.9340],
+  [18.5760, 73.9395],
+  [18.5800, 73.9450],
+  [18.5840, 73.9505],
+  [18.5880, 73.9560],
+  [18.5920, 73.9615],
+  [18.5960, 73.9670]
+];
+
+export const route335ECoords = [
+  [18.4480, 73.8640],
+  [18.4530, 73.8590],
+  [18.4580, 73.8540],
+  [18.4630, 73.8490],
+  [18.4680, 73.8440],
+  [18.4730, 73.8390],
+  [18.4780, 73.8340],
+  [18.4830, 73.8290],
+  [18.4880, 73.8240],
+  [18.4930, 73.8190],
+  [18.4980, 73.8140],
+  [18.5030, 73.8090],
+  [18.5080, 73.8040],
+  [18.5130, 73.7990],
+  [18.5180, 73.7940]
+];
+
+export default function LiveMap({
+  activeCity = 'hyderabad',
+  selectedCategory = 'all',
+  alerts = [],
+  buses = [],
+  activeBus,
   isPlaying = false,
   videoProgress = 0,
-  onSelectAlert, 
+  selectedIncident = null,
+  onSelectAlert,
   onSelectBus
 }) {
-  const [showPotholes, setShowPotholes] = useState(true);
-  const [showTraffic, setShowTraffic] = useState(true);
-  const [showBuses, setShowBuses] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(false);
 
-  // Default transit center
-  const defaultCenter = [18.5350, 73.8567];
+  // Map center for city
+  const cityCenter = activeCity === 'hyderabad' ? [17.4435, 78.3772] : [18.5380, 73.7850];
 
-  // 3 Distinct Full-Length Urban Transit Corridors
-  const route115Coords = [
-    [18.5392, 73.7680],
-    [18.5420, 73.7712],
-    [18.5445, 73.7745],
-    [18.5470, 73.7772],
-    [18.5492, 73.7798],
-    [18.5515, 73.7820],
-    [18.5538, 73.7848],
-    [18.5562, 73.7870],
-    [18.5582, 73.7892],
-    [18.5605, 73.7918],
-    [18.5628, 73.7945],
-    [18.5645, 73.7968],
-    [18.5675, 73.7998],
-    [18.5702, 73.8028],
-    [18.5721, 73.8052],
-    [18.5748, 73.8080],
-    [18.5775, 73.8020],
-    [18.5810, 73.7920],
-    [18.5860, 73.7810],
-    [18.5910, 73.7710],
-    [18.5950, 73.7620],
-    [18.5985, 73.7540],
-    [18.6015, 73.7460],
-    [18.6045, 73.7380],
-    [18.6080, 73.7300]
-  ];
-
-  const route500DCoords = [
-    [18.5284, 73.8743],
-    [18.5308, 73.8765],
-    [18.5342, 73.8791],
-    [18.5375, 73.8825],
-    [18.5411, 73.8864],
-    [18.5438, 73.8895],
-    [18.5468, 73.8927],
-    [18.5490, 73.8960],
-    [18.5512, 73.8995],
-    [18.5535, 73.9030],
-    [18.5558, 73.9064],
-    [18.5580, 73.9100],
-    [18.5604, 73.9142],
-    [18.5625, 73.9180],
-    [18.5649, 73.9218],
-    [18.5670, 73.9255],
-    [18.5700, 73.9300],
-    [18.5735, 73.9356],
-    [18.5760, 73.9400],
-    [18.5790, 73.9450],
-    [18.5815, 73.9485],
-    [18.5835, 73.9515],
-    [18.5855, 73.9545],
-    [18.5880, 73.9575]
-  ];
-
-  const route335ECoords = [
-    [18.5015, 73.8580],
-    [18.4965, 73.8588],
-    [18.4920, 73.8595],
-    [18.4865, 73.8602],
-    [18.4815, 73.8612],
-    [18.4750, 73.8620],
-    [18.4685, 73.8628],
-    [18.4620, 73.8638],
-    [18.4550, 73.8645],
-    [18.4510, 73.8580],
-    [18.4480, 73.8510],
-    [18.4530, 73.8420],
-    [18.4610, 73.8340],
-    [18.4700, 73.8260],
-    [18.4790, 73.8180],
-    [18.4870, 73.8110],
-    [18.4960, 73.8030],
-    [18.5040, 73.7960],
-    [18.5120, 73.7890],
-    [18.5190, 73.7820],
-    [18.5260, 73.7760],
-    [18.5340, 73.7710]
-  ];
-
-  const activeRouteCoords = activeBus?.bus_label === 'BUS-218' 
-    ? route500DCoords 
-    : activeBus?.bus_label === 'BUS-301' 
-    ? route335ECoords 
-    : route115Coords;
+  // Pick active route coords based on active bus
+  let activeRouteCoords = route216Coords;
+  if (activeBus?.bus_label === 'HYD-204') activeRouteCoords = route10HCoords;
+  else if (activeBus?.bus_label === 'HYD-305') activeRouteCoords = route5KCoords;
+  else if (activeBus?.bus_label === 'BUS-104') activeRouteCoords = route115Coords;
+  else if (activeBus?.bus_label === 'BUS-218') activeRouteCoords = route500DCoords;
+  else if (activeBus?.bus_label === 'BUS-301') activeRouteCoords = route335ECoords;
 
   const interpolatedPos = interpolatePositionAlongRoute(activeRouteCoords, videoProgress);
-  const currentCenterLat = isPlaying ? interpolatedPos[0] : (activeBus?.current_lat || defaultCenter[0]);
-  const currentCenterLng = isPlaying ? interpolatedPos[1] : (activeBus?.current_lng || defaultCenter[1]);
+  const currentCenterLat = isPlaying ? interpolatedPos[0] : activeBus?.current_lat || cityCenter[0];
+  const currentCenterLng = isPlaying ? interpolatedPos[1] : activeBus?.current_lng || cityCenter[1];
+
+  // Filter alerts by selectedCategory
+  const displayedAlerts = alerts
+    .filter((alert) => alert.latitude != null && alert.longitude != null && isFinite(alert.latitude) && isFinite(alert.longitude))
+    .filter((alert) => {
+      if (selectedCategory === 'all') return true;
+      if (selectedCategory === 'potholes') return alert.alert_type === 'pothole';
+      if (selectedCategory === 'water_logging') return alert.alert_type === 'water_logging';
+      if (selectedCategory === 'missing_divider') return alert.alert_type === 'missing_divider';
+      if (selectedCategory === 'damaged_road') return ['road_crack', 'road_damage'].includes(alert.alert_type);
+      if (selectedCategory === 'garbage') return alert.alert_type === 'garbage';
+      if (selectedCategory === 'zebra_fading') return alert.alert_type === 'zebra_fading';
+      if (selectedCategory === 'congestion') return alert.alert_type === 'congestion';
+      if (selectedCategory === 'vehicle_density') return alert.alert_type === 'vehicle_density';
+      if (selectedCategory === 'overloaded_two_wheeler') return alert.alert_type === 'overloaded_two_wheeler';
+      if (selectedCategory === 'helmet_violation') return alert.alert_type === 'helmet_violation';
+      if (selectedCategory === 'accident') return ['accident', 'rash_driving'].includes(alert.alert_type);
+      if (selectedCategory === 'watchlist_match') return alert.alert_type === 'watchlist_match';
+      return true;
+    });
 
   return (
-    <div className="relative w-full h-[520px] lg:h-full min-h-[440px] rounded-xl overflow-hidden border border-slate-200 shadow-xs bg-white">
-      
-      {/* Map Control Bar Overlay */}
-      <div className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur-xs p-1.5 rounded-xl border border-slate-200 shadow-md flex items-center space-x-1.5 text-xs font-medium text-slate-700">
-        <span className="text-[10px] font-mono uppercase text-slate-400 px-2 font-bold">MAP LAYERS</span>
-        
-        <button
-          onClick={() => setShowBuses(!showBuses)}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded-md transition-all ${
-            showBuses ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200' : 'text-slate-500 hover:bg-slate-100'
-          }`}
-        >
-          <BusIcon className="w-3.5 h-3.5" />
-          <span>Buses ({buses.length})</span>
-        </button>
+    <div className="relative w-full h-full min-h-[440px] rounded-xl overflow-hidden border border-slate-200 shadow-xs bg-white">
+      {/* Overlay Toolbar */}
+      <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-xs p-1.5 rounded-xl border border-slate-200 shadow-md flex items-center space-x-2 text-xs font-medium text-slate-700">
+        <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-1.5">
+          {activeCity.toUpperCase()} CORRIDOR
+        </span>
 
-        <button
-          onClick={() => setShowPotholes(!showPotholes)}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded-md transition-all ${
-            showPotholes ? 'bg-red-50 text-red-700 font-semibold border border-red-200' : 'text-slate-500 hover:bg-slate-100'
-          }`}
-        >
-          <Disc className="w-3.5 h-3.5" />
-          <span>Potholes ({alerts.filter(a => a.alert_type === 'pothole').length})</span>
-        </button>
-
-        <button
-          onClick={() => setShowTraffic(!showTraffic)}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded-md transition-all ${
-            showTraffic ? 'bg-amber-50 text-amber-700 font-semibold border border-amber-200' : 'text-slate-500 hover:bg-slate-100'
-          }`}
-        >
-          <Car className="w-3.5 h-3.5" />
-          <span>Traffic ({alerts.filter(a => a.alert_type === 'vehicle_density').length})</span>
-        </button>
+        <span className="text-[11px] font-mono font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+          {displayedAlerts.length} Map Pins
+        </span>
 
         <button
           onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`flex items-center space-x-1.5 px-3 py-1 rounded-md transition-all ${
-            showHeatmap 
-              ? 'bg-purple-600 text-white font-semibold shadow-xs ring-2 ring-purple-200' 
-              : 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200'
+          className={`flex items-center space-x-1 px-2.5 py-1 rounded-md transition-all text-xs ${
+            showHeatmap ? 'bg-orange-500 text-white font-bold shadow-xs' : 'text-slate-600 hover:bg-slate-100'
           }`}
-          title="Toggle Urban Risk & Congestion Heatmap"
         >
           <Flame className="w-3.5 h-3.5" />
-          <span>Heatmap {showHeatmap ? 'ON' : 'OFF'}</span>
+          <span>Heatmap</span>
         </button>
       </div>
 
-      {/* Floating Heatmap Intensity Legend (when Heatmap is ON) */}
-      {showHeatmap && (
-        <div className="absolute bottom-4 right-4 z-[1000] bg-white/95 backdrop-blur-xs p-3 rounded-xl border border-slate-200 shadow-xl text-xs space-y-1.5 animate-fadeIn font-sans">
-          <div className="font-bold text-slate-900 border-b border-slate-100 pb-1 flex items-center space-x-1.5">
-            <Flame className="w-4 h-4 text-purple-600" />
-            <span>Urban Hazard Heatmap</span>
-          </div>
-          <div className="flex items-center space-x-2 text-[11px] text-slate-600">
-            <span className="w-3 h-3 rounded-full bg-red-600 shadow-xs inline-block"></span>
-            <span>Critical Pothole Cluster</span>
-          </div>
-          <div className="flex items-center space-x-2 text-[11px] text-slate-600">
-            <span className="w-3 h-3 rounded-full bg-rose-400 shadow-xs inline-block"></span>
-            <span>Moderate Surface Defect</span>
-          </div>
-          <div className="flex items-center space-x-2 text-[11px] text-slate-600">
-            <span className="w-3 h-3 rounded-full bg-amber-500 shadow-xs inline-block"></span>
-            <span>High Vehicular Congestion</span>
-          </div>
-        </div>
-      )}
-
-      {/* Actual Leaflet Map */}
       <MapContainer
-        center={defaultCenter}
-        zoom={12}
-        style={{ width: '100%', height: '100%', minHeight: '440px' }}
+        center={cityCenter}
+        zoom={13}
         className="w-full h-full z-0"
         zoomControl={false}
       >
-        <MapUpdater lat={currentCenterLat} lng={currentCenterLng} isMoving={isPlaying} />
-        
-        {/* OpenStreetMap / CartoDB Positron Light Tiles */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
-        {/* Route 115: Sus Road (West) */}
-        <Polyline
-          positions={route115Coords}
-          pathOptions={{
-            color: activeBus?.bus_label === 'BUS-104' ? '#2563EB' : '#94A3B8',
-            weight: activeBus?.bus_label === 'BUS-104' ? 5 : 3,
-            opacity: activeBus?.bus_label === 'BUS-104' ? 0.85 : 0.4,
-            dashArray: '6, 6'
-          }}
+        <MapUpdater
+          lat={currentCenterLat}
+          lng={currentCenterLng}
+          isMoving={isPlaying}
+          selectedIncident={selectedIncident}
+          activeCity={activeCity}
         />
 
-        {/* Route 500D: Nagar Road (East) */}
-        <Polyline
-          positions={route500DCoords}
-          pathOptions={{
-            color: activeBus?.bus_label === 'BUS-218' ? '#4F46E5' : '#94A3B8',
-            weight: activeBus?.bus_label === 'BUS-218' ? 5 : 3,
-            opacity: activeBus?.bus_label === 'BUS-218' ? 0.85 : 0.4,
-            dashArray: '6, 6'
-          }}
-        />
+        {/* Polylines for Active Routes */}
+        {activeCity === 'hyderabad' ? (
+          <>
+            <Polyline positions={route216Coords} pathOptions={{ color: '#0284C7', weight: 4, opacity: 0.8 }} />
+            <Polyline positions={route10HCoords} pathOptions={{ color: '#0D9488', weight: 3.5, opacity: 0.6 }} />
+            <Polyline positions={route5KCoords} pathOptions={{ color: '#6366F1', weight: 3.5, opacity: 0.6 }} />
+          </>
+        ) : (
+          <>
+            <Polyline positions={route115Coords} pathOptions={{ color: '#2563EB', weight: 4, opacity: 0.8 }} />
+            <Polyline positions={route500DCoords} pathOptions={{ color: '#4F46E5', weight: 3.5, opacity: 0.6 }} />
+            <Polyline positions={route335ECoords} pathOptions={{ color: '#7C3AED', weight: 3.5, opacity: 0.6 }} />
+          </>
+        )}
 
-        {/* Route 335E: Highway (South) */}
-        <Polyline
-          positions={route335ECoords}
-          pathOptions={{
-            color: activeBus?.bus_label === 'BUS-301' ? '#7C3AED' : '#94A3B8',
-            weight: activeBus?.bus_label === 'BUS-301' ? 5 : 3,
-            opacity: activeBus?.bus_label === 'BUS-301' ? 0.85 : 0.4,
-            dashArray: '6, 6'
-          }}
-        />
+        {/* Heatmap Rings */}
+        {showHeatmap &&
+          displayedAlerts.map((alert) => (
+            <Circle
+              key={`heat-${alert.id}`}
+              center={[alert.latitude, alert.longitude]}
+              radius={70}
+              pathOptions={{
+                fillColor: alert.priority_level === 'P0' ? '#DC2626' : '#EA580C',
+                fillOpacity: 0.25,
+                stroke: false
+              }}
+            />
+          ))}
 
-        {/* HEATMAP LAYER: Radial Hazard & Congestion Intensity Rings */}
-        {showHeatmap && alerts.map((alert) => {
-          const isPothole = alert.alert_type === 'pothole';
-          const isCritical = alert.severity === 'CRITICAL';
-          const fillColor = isPothole ? (isCritical ? '#DC2626' : '#F43F5E') : '#F59E0B';
-          const radiusMeters = isPothole ? (isCritical ? 550 : 380) : (alert.vehicle_count > 20 ? 700 : 450);
-
-          return (
-            <React.Fragment key={`heat-${alert.id}`}>
-              {/* Outer soft glow ring */}
-              <Circle
-                center={[alert.latitude, alert.longitude]}
-                radius={radiusMeters}
-                pathOptions={{
-                  fillColor: fillColor,
-                  fillOpacity: 0.18,
-                  stroke: false
-                }}
-              />
-              {/* Inner intense core ring */}
-              <Circle
-                center={[alert.latitude, alert.longitude]}
-                radius={radiusMeters * 0.45}
-                pathOptions={{
-                  fillColor: fillColor,
-                  fillOpacity: 0.38,
-                  color: fillColor,
-                  weight: 1.5,
-                  opacity: 0.6
-                }}
-              />
-            </React.Fragment>
-          );
-        })}
-
-        {/* Bus Fleet Markers */}
-        {showBuses && buses.map((bus) => {
+        {/* Bus Markers */}
+        {buses.map((bus) => {
           const isThisBusActive = activeBus && activeBus.bus_label === bus.bus_label;
           const isMoving = isThisBusActive ? isPlaying : false;
-          const speed = isMoving ? (activeBus?.speed_kmh || bus.speed_kmh || 32) : 0;
-          const markerPos = (isThisBusActive && isPlaying) ? interpolatedPos : [bus.current_lat, bus.current_lng];
+          const speed = isMoving ? activeBus?.speed_kmh || bus.speed_kmh || 32 : 0;
+          const markerPos = isThisBusActive && isPlaying ? interpolatedPos : [bus.current_lat, bus.current_lng];
 
           return (
             <Marker
@@ -398,26 +430,20 @@ export default function LiveMap({
                 click: () => onSelectBus && onSelectBus(bus)
               }}
             >
-              <Popup>
-                <div className="p-3 w-56">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-                    <span className="font-bold text-slate-900 text-sm">{bus.bus_label}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
-                      isMoving ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                    }`}>
-                      {isMoving ? 'MOVING' : 'IDLE / STOPPED'}
+              <Popup offset={[130, -5]} closeButton={false}>
+                <div className="p-3 w-52 font-sans text-xs">
+                  <div className="flex items-center justify-between border-b pb-1.5 mb-1.5 font-bold">
+                    <span>{bus.bus_label}</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-mono">
+                      {isMoving ? 'ONLINE' : 'STANDBY'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600 mb-1">{bus.route_name}</p>
-                  <div className="grid grid-cols-2 gap-1 text-[11px] text-slate-500 mt-2 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <div>Speed: <b className="text-slate-900">{isMoving ? bus.speed_kmh : 0} km/h</b></div>
-                    <div>Potholes: <b className="text-red-600">{bus.total_potholes}</b></div>
-                  </div>
+                  <p className="text-slate-600 text-[11px] mb-2">{bus.route_name}</p>
                   <button
                     onClick={() => onSelectBus && onSelectBus(bus)}
-                    className="w-full mt-2.5 bg-blue-600 text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
+                    className="w-full bg-blue-600 text-white font-bold py-1 rounded text-center text-xs"
                   >
-                    Switch Live Feed to {bus.bus_label} →
+                    Select Bus Stream →
                   </button>
                 </div>
               </Popup>
@@ -425,70 +451,40 @@ export default function LiveMap({
           );
         })}
 
-        {/* Pothole & Traffic Alert Markers */}
-        {alerts.map((alert) => {
-          if (alert.alert_type === 'pothole' && !showPotholes) return null;
-          if (alert.alert_type === 'vehicle_density' && !showTraffic) return null;
-
-          const isPothole = alert.alert_type === 'pothole';
-          const icon = isPothole 
-            ? createPotholeIcon(alert.severity, alert.confidence)
-            : createTrafficIcon(alert.vehicle_count);
-
-          return (
-            <Marker
-              key={`alert-${alert.id}`}
-              position={[alert.latitude, alert.longitude]}
-              icon={icon}
-              eventHandlers={{
-                click: () => onSelectAlert && onSelectAlert(alert)
-              }}
-            >
-              <Popup>
-                <div className="p-3 w-64">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-                    <div className="flex items-center space-x-1.5">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        isPothole ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        #{alert.alert_code}
-                      </span>
-                      <span className="text-xs font-bold text-slate-900">
-                        {isPothole ? 'Road Defect' : 'Vehicle Density'}
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </span>
-                  </div>
-
-                  {alert.annotated_image_url && (
-                    <img
-                      src={alert.annotated_image_url}
-                      alt="Defect Evidence"
-                      className="w-full h-28 object-cover rounded-lg border border-slate-200 mb-2"
-                    />
-                  )}
-
-                  <div className="text-xs text-slate-700 font-medium mb-1">
-                    📍 {alert.location_name}
-                  </div>
-                  <div className="text-[11px] text-slate-500 mb-2">
-                    Source: <b className="text-slate-900">{alert.bus_id}</b> ({alert.route_id}) · Conf: <b>{(alert.confidence * 100).toFixed(1)}%</b>
-                  </div>
-
-                  <button
-                    onClick={() => onSelectAlert && onSelectAlert(alert)}
-                    className="w-full bg-slate-900 text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-                  >
-                    Inspect AI Evidence Artifact →
-                  </button>
+        {/* Incident Alert Markers */}
+        {displayedAlerts.map((alert) => (
+          <Marker
+            key={`alert-${alert.id}`}
+            position={[alert.latitude, alert.longitude]}
+            icon={createIncidentIcon(alert)}
+            eventHandlers={{
+              click: () => onSelectAlert && onSelectAlert(alert)
+            }}
+          >
+            <Popup offset={[0, -20]}>
+              <div className="p-2.5 w-60 text-xs font-sans">
+                <div className="flex items-center justify-between border-b pb-1 mb-1 font-bold">
+                  <span className="text-slate-900">{alert.alert_code}</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded font-extrabold bg-red-100 text-red-800">
+                    {alert.priority_level || 'P1'}
+                  </span>
                 </div>
-              </Popup>
-            </Marker>
-          );
-        })}
-
+                <div className="font-semibold text-slate-800 mb-1">{alert.alert_type.toUpperCase().replace(/_/g, ' ')}</div>
+                <p className="text-[11px] text-slate-500 mb-2">{alert.location_name}</p>
+                <div className="text-[10px] font-mono text-slate-600 bg-slate-50 p-1.5 rounded border mb-2">
+                  <div>Confidence: {(alert.confidence * 100).toFixed(1)}%</div>
+                  <div>Sighted: {alert.sighting_count || 1} passes</div>
+                </div>
+                <button
+                  onClick={() => onSelectAlert && onSelectAlert(alert)}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-center text-xs shadow-xs transition-colors cursor-pointer"
+                >
+                  Inspect AI Evidence →
+                </button>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
     </div>
   );

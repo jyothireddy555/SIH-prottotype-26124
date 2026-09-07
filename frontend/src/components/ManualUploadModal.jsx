@@ -59,7 +59,7 @@ export default function ManualUploadModal({ isOpen, onClose, onSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full overflow-hidden animate-in zoom-in-95 duration-150">
         
         {/* Header */}
@@ -87,12 +87,12 @@ export default function ManualUploadModal({ isOpen, onClose, onSuccess }) {
           {/* File Dropzone */}
           <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-blue-500 transition-colors bg-slate-50/50">
             {previewUrl ? (
-              <div className="relative rounded-lg overflow-hidden border border-slate-200 max-h-48 bg-slate-950">
+              <div className="relative rounded-lg overflow-hidden border border-slate-200 max-h-48 bg-slate-100">
                 <img src={previewUrl} alt="Preview" className="w-full h-48 object-contain" />
                 <button
                   type="button"
                   onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
-                  className="absolute top-2 right-2 bg-slate-900/80 text-white p-1 rounded-md text-xs hover:bg-slate-900"
+                  className="absolute top-2 right-2 bg-white text-slate-800 p-1.5 rounded-md text-xs font-semibold hover:bg-slate-50 border border-slate-200 shadow-xs cursor-pointer"
                 >
                   Change Image
                 </button>

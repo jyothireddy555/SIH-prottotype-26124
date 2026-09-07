@@ -2,9 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from './api';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
-import LiveMap from './components/LiveMap';
-import BusVideoHUD from './components/BusVideoHUD';
-import ActivityTicker from './components/ActivityTicker';
+import SimulationView from './components/SimulationView';
+import LiveMap, { 
+  route115Coords, 
+  route500DCoords, 
+  route335ECoords,
+  route216Coords,
+  route10HCoords,
+  route5KCoords,
+  interpolatePositionAlongRoute 
+} from './components/LiveMap';
+import PriorityTable from './components/PriorityTable';
+import WatchlistModal from './components/WatchlistModal';
+import SignboardsModal from './components/SignboardsModal';
 import IncidentDrawer from './components/IncidentDrawer';
 import BusDetailDrawer from './components/BusDetailDrawer';
 import AIAgentsDrawer from './components/AIAgentsDrawer';
@@ -14,21 +24,27 @@ import { Disc, Car, Bus, Filter, AlertCircle, ArrowUpRight } from 'lucide-react'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('command');
+  const [activeCity, setActiveCity] = useState('hyderabad');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [activeCamera, setActiveCamera] = useState('CAM-1-FRONT');
+
   const [stats, setStats] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [buses, setBuses] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [simStatus, setSimStatus] = useState(null);
-  const [activeBusId, setActiveBusId] = useState('BUS-104');
+  const [activeBusId, setActiveBusId] = useState('HYD-101');
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState('1x');
   const [latestDetection, setLatestDetection] = useState(null);
 
-  // Drawer states
+  // Modal / Drawer states
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [selectedBus, setSelectedBus] = useState(null);
   const [showAgentsModal, setShowAgentsModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showWatchlistModal, setShowWatchlistModal] = useState(false);
+  const [showSignboardsModal, setShowSignboardsModal] = useState(false);
   const [systemInfo, setSystemInfo] = useState(null);
 
   // Filters for subviews
@@ -37,9 +53,9 @@ export default function App() {
   const simIntervalRef = useRef(null);
 
   // Fetch initial data via unified aggregate endpoint
-  const loadAllData = async () => {
+  const loadAllData = async (cityToLoad = activeCity) => {
     try {
-      const data = await api.getDashboardData(50);
+      const data = await api.getDashboardData(50, cityToLoad);
       if (data) {
         if (data.stats) setStats(data.stats);
         if (data.alerts) setAlerts(data.alerts);
@@ -54,21 +70,51 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadAllData();
-    const interval = setInterval(loadAllData, 3500);
+    loadAllData(activeCity);
+    const interval = setInterval(() => loadAllData(activeCity), 3500);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeCity]);
 
-  // Switch Active Bus Function
+  // Switch Active City Function (Independent Command Center Model)
+  const handleSelectCity = async (cityId) => {
+    const nextCity = cityId.toLowerCase();
+    setActiveCity(nextCity);
+    const defaultBus = nextCity === 'hyderabad' ? 'HYD-101' : 'BUS-104';
+    setActiveBusId(defaultBus);
+    setVideoProgress(0);
+    setLatestDetection(null);
+    lastWaypointRef.current = -1;
+    try {
+      await api.setSimCity(nextCity);
+      await loadAllData(nextCity);
+    } catch (e) {
+      console.error('Failed to set active city:', e);
+    }
+  };
+
+  // Switch Active Bus Function (Each bus is an independent, distinct route run)
   const handleSelectBusId = async (busId) => {
     setActiveBusId(busId);
+    setVideoProgress(0);
+    setLatestDetection(null);
+    lastWaypointRef.current = -1;
     try {
       await api.setSimBus(busId);
       const updatedSim = await api.getSimStatus();
       setSimStatus(updatedSim);
-      loadAllData();
+      loadAllData(activeCity);
     } catch (e) {
       console.error('Failed to set active bus:', e);
+    }
+  };
+
+  // Switch Active Camera Angle
+  const handleSelectCamera = async (camId) => {
+    setActiveCamera(camId);
+    try {
+      await api.setSimCamera(camId);
+    } catch (e) {
+      console.error('Failed to switch camera:', e);
     }
   };
 
@@ -83,52 +129,76 @@ export default function App() {
   // Direct Live Frame Ingestion: Sends exact canvas frame to YOLO model
   const handleSendLiveFrame = async (imageBase64, progress, currentTime) => {
     try {
+      const routeCoordsMap = {
+        'HYD-101': route216Coords,
+        'HYD-204': route10HCoords,
+        'HYD-305': route5KCoords,
+        'BUS-104': route115Coords,
+        'BUS-218': route500DCoords,
+        'BUS-301': route335ECoords
+      };
+      const activeRoute = routeCoordsMap[activeBusId] || route216Coords;
+      const [exactLat, exactLng] = interpolatePositionAlongRoute(activeRoute, progress);
+
       const res = await api.sendLiveFrame({
         bus_id: activeBusId,
         image_base64: imageBase64,
         progress: progress,
         speed_kmh: activeBus?.speed_kmh || 32.0,
-        lat: activeBus?.current_lat,
-        lng: activeBus?.current_lng,
+        lat: exactLat,
+        lng: exactLng,
         location_name: activeBus?.route_name
       });
       if (res && res.detection) {
         setLatestDetection(res.detection);
       }
-      loadAllData();
     } catch (e) {
       console.error('Live frame error:', e);
     }
   };
 
-  // Step simulation logic
+  // Step simulation logic — synced to video timeline position
   const handleStepSimulation = async () => {
     try {
-      const res = await api.stepSim();
+      const routeCoordsMap = {
+        'HYD-101': route216Coords,
+        'HYD-204': route10HCoords,
+        'HYD-305': route5KCoords,
+        'BUS-104': route115Coords,
+        'BUS-218': route500DCoords,
+        'BUS-301': route335ECoords
+      };
+      const activeRoute = routeCoordsMap[activeBusId] || route216Coords;
+      const [exactLat, exactLng] = interpolatePositionAlongRoute(activeRoute, videoProgress);
+
+      const res = await api.stepSim(videoProgress, exactLat, exactLng);
       if (res && res.detection) {
         setLatestDetection(res.detection);
       }
-      await loadAllData();
+      await loadAllData(activeCity);
     } catch (e) {
       console.error('Simulation step error:', e);
     }
   };
 
   // Continuous Play/Pause Simulation Controller
+  const startDelayRef = useRef(null);
   useEffect(() => {
     if (isPlaying) {
-      handleStepSimulation();
       const intervalMs = speed === '3x' ? 1200 : speed === '2x' ? 2000 : 3000;
-      simIntervalRef.current = setInterval(handleStepSimulation, intervalMs);
+      startDelayRef.current = setTimeout(() => {
+        handleStepSimulation();
+        simIntervalRef.current = setInterval(handleStepSimulation, intervalMs);
+      }, 150);
     } else {
-      if (simIntervalRef.current) {
-        clearInterval(simIntervalRef.current);
-      }
+      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+      if (startDelayRef.current) clearTimeout(startDelayRef.current);
     }
     return () => {
       if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+      if (startDelayRef.current) clearTimeout(startDelayRef.current);
     };
-  }, [isPlaying, speed, activeBusId]);
+  }, [isPlaying, speed, activeBusId, activeCity]);
 
   const handleTogglePlay = async () => {
     const nextState = !isPlaying;
@@ -147,8 +217,8 @@ export default function App() {
     try {
       await api.resetSim(true);
       setLatestDetection(null);
-      await loadAllData();
-      setResetToast("✨ Fresh Jury Demo Mode Initialized: All historical alerts cleared. Click [START BUS RUN] to begin live AI detection!");
+      await loadAllData(activeCity);
+      setResetToast("✨ Clean Slate Initialized: All temporary detections reset. Edge AI Nodes ready.");
       setTimeout(() => setResetToast(null), 5000);
     } catch (e) {
       console.error('Reset error:', e);
@@ -158,410 +228,317 @@ export default function App() {
   const handleUpdateStatus = async (alertId, action) => {
     try {
       await api.updateAlertAction(alertId, action);
-      loadAllData();
+      loadAllData(activeCity);
       if (selectedIncident && selectedIncident.id === alertId) {
         const updated = await api.getAlertDetail(alertId);
         setSelectedIncident(updated);
       }
     } catch (e) {
-      console.error('Action error:', e);
+      console.error('Update status error:', e);
     }
   };
 
-  const activeBus = buses.find(b => b.bus_label === activeBusId) || buses[0] || {
-    id: 1,
+  const activeBus = buses.find((b) => b.bus_label === activeBusId) || {
     bus_label: activeBusId,
-    bus_number: activeBusId === 'BUS-218' ? 'MH-12-AB-218' : activeBusId === 'BUS-301' ? 'MH-12-TR-301' : 'MH-12-RN-104',
-    speed_kmh: 34.0,
-    route_id: activeBusId === 'BUS-218' ? 'Route 500D' : activeBusId === 'BUS-301' ? 'Route 335E' : 'Route 115',
-    route_name: activeBusId === 'BUS-218' ? 'Pune Monsoon City Corridor' : activeBusId === 'BUS-301' ? 'Highway Traffic Flow' : 'Sus Road & Pashan Corridor',
-    current_lat: 18.5284,
-    current_lng: 73.8743,
-    total_potholes: 5,
-    total_vehicles: 82,
-    total_detections: 18
+    route_id: activeCity === 'hyderabad' ? 'Route 216' : 'Route 115',
+    route_name: activeCity === 'hyderabad' ? 'Gachibowli - Hitec City Corridor' : 'Sus Road - Pashan - Hinjewadi',
+    speed_kmh: 32.0,
+    current_lat: activeCity === 'hyderabad' ? 17.4435 : 18.5380,
+    current_lng: activeCity === 'hyderabad' ? 78.3772 : 73.7850
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-slate-900 flex flex-col font-sans">
-      
-      {/* 1. Light Antigravity-Style Header */}
+    <div className="flex flex-col h-screen bg-[#F8F9FA] text-slate-900 font-sans antialiased overflow-hidden">
+      {/* 1. Header Bar matching Wireframe: [📍 City] [Moving Sensors Device] [Home] [Alerts] [Logout] */}
       <Header
-        simStatus={simStatus}
-        isPlaying={isPlaying}
-        onTogglePlay={handleTogglePlay}
-        onStep={handleStepSimulation}
-        onReset={handleReset}
-        speed={speed}
-        onChangeSpeed={setSpeed}
+        activeCity={activeCity}
+        onSelectCity={handleSelectCity}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onOpenWatchlist={() => setShowWatchlistModal(true)}
+        onOpenSignboards={() => setShowSignboardsModal(true)}
         onOpenUpload={() => setShowUploadModal(true)}
-        onRefresh={loadAllData}
+        onReset={handleReset}
+        onRefresh={() => loadAllData(activeCity)}
         stats={stats}
-        buses={buses}
-        activeBusId={activeBusId}
-        onSelectBusId={handleSelectBusId}
       />
 
-      {/* Jury Demo Reset Toast Banner */}
+      {/* Demo Toast Notification */}
       {resetToast && (
-        <div className="bg-purple-600 text-white px-6 py-2.5 text-xs font-bold font-mono flex items-center justify-between shadow-md animate-fadeIn">
+        <div className="bg-purple-600 text-white px-6 py-2.5 text-xs font-bold font-mono flex items-center justify-between shadow-md animate-fadeIn shrink-0 z-40">
           <div className="flex items-center space-x-2">
-            <span className="bg-white text-purple-700 px-2 py-0.5 rounded text-[10px] uppercase font-sans font-extrabold">JURY DEMO MODE</span>
+            <span className="bg-white text-purple-700 px-2 py-0.5 rounded text-[10px] uppercase font-sans font-extrabold">DEMO MODE</span>
             <span>{resetToast}</span>
           </div>
           <button onClick={() => setResetToast(null)} className="text-white/80 hover:text-white font-bold ml-4">✕</button>
         </div>
       )}
 
-      {/* 2. Main App Container */}
+      {/* 2. Main Work Area */}
       <div className="flex-1 flex overflow-hidden">
-        
-        {/* Left Minimal Sidebar */}
-        <Sidebar
-          activeTab={activeTab}
-          setActiveTab={(tab) => {
-            if (tab === 'agents') {
-              setShowAgentsModal(true);
-            } else {
-              setActiveTab(tab);
-            }
-          }}
-          stats={stats}
-        />
+        {/* COLUMN 1: LEFT TAB BAR & CATEGORIES (Persistent for Command Center & Simulation) */}
+        {(activeTab === 'command' || activeTab === 'simulation') && (
+          <Sidebar
+            activeTab={activeTab}
+            onSelectTab={(tab) => setActiveTab(tab)}
+            activeCity={activeCity}
+            selectedCategory={selectedCategory}
+            onSelectCategory={(cat) => setSelectedCategory(cat)}
+            alerts={alerts}
+            stats={stats}
+            activeBus={activeBus}
+            isPlaying={isPlaying}
+          />
+        )}
 
-        {/* Dynamic Center Work Area */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#F8F9FA] overflow-y-auto">
-          
-          {/* VIEW A: Command Center (Map + Live Video HUD) */}
-          {activeTab === 'command' && (
-            <div className="flex-1 flex flex-col p-4 space-y-4">
-              
-              {/* Dual Panel Grid: Onboard Video HUD + Live City Map */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                
-                {/* Left/Top: Synchronized Live Onboard Bus Video HUD */}
-                <div className="lg:col-span-5 flex flex-col space-y-2 h-[480px]">
-                  <div className="flex items-center justify-between px-1 shrink-0">
-                    <span className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">
-                      ONBOARD BUS VISION HUD
-                    </span>
-                    <span className="text-[10px] text-blue-700 font-mono font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      SYNC WITH MAP
-                    </span>
-                  </div>
-                  
-                  <div className="flex-1 h-full rounded-xl overflow-hidden shadow-xs border border-slate-200">
-                    <BusVideoHUD
-                      activeBus={activeBus}
-                      latestDetection={latestDetection}
-                      isPlaying={isPlaying}
-                      systemInfo={systemInfo}
-                      onTogglePlay={handleTogglePlay}
-                      onPlayStateChange={(state) => setIsPlaying(state)}
-                      onSelectBus={(busId) => {
-                        setVideoProgress(0);
-                        lastWaypointRef.current = -1;
-                        handleSelectBusId(busId);
-                      }}
-                      onInspectLatest={() => {
-                        if (alerts.length > 0) setSelectedIncident(alerts[0]);
-                      }}
-                      onVideoProgress={handleVideoProgress}
-                      onSendLiveFrame={handleSendLiveFrame}
-                    />
-                  </div>
-                </div>
-
-                {/* Right/Bottom: Live City Geographic Map */}
-                <div className="lg:col-span-7 flex flex-col space-y-2 h-[480px]">
-                  <div className="flex items-center justify-between px-1 shrink-0">
-                    <span className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">
-                      LIVE CITY TRANSIT CORRIDOR MAP
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {activeBus?.route_name || 'Pune Transit Corridor'}
-                    </span>
-                  </div>
-                  
-                  <div className="flex-1 h-full rounded-xl overflow-hidden shadow-xs border border-slate-200">
-                    <LiveMap
-                      alerts={alerts}
-                      buses={buses}
-                      activeBus={activeBus}
-                      isPlaying={isPlaying}
-                      videoProgress={videoProgress}
-                      onSelectAlert={(al) => setSelectedIncident(al)}
-                      onSelectBus={(b) => {
-                        setVideoProgress(0);
-                        lastWaypointRef.current = -1;
-                        handleSelectBusId(b.bus_label);
-                        setSelectedBus(b);
-                      }}
-                    />
-                  </div>
-                </div>
-
+        {/* VIEW A: Command Center (Center Map + Right Priority Table) */}
+        {activeTab === 'command' && (
+          <div className="flex-1 flex overflow-hidden">
+            {/* COLUMN 2: CENTER MAP */}
+            <div className="flex-1 flex flex-col p-3 min-w-0 bg-[#F1F3F5] overflow-hidden">
+              <div className="flex-1 rounded-xl overflow-hidden shadow-xs border border-slate-200 bg-white">
+                <LiveMap
+                  activeCity={activeCity}
+                  selectedCategory={selectedCategory}
+                  alerts={alerts}
+                  buses={buses}
+                  activeBus={activeBus}
+                  isPlaying={isPlaying}
+                  videoProgress={videoProgress}
+                  selectedIncident={selectedIncident}
+                  onSelectAlert={(al) => setSelectedIncident(al)}
+                  onSelectBus={(b) => {
+                    setVideoProgress(0);
+                    lastWaypointRef.current = -1;
+                    handleSelectBusId(b.bus_label);
+                    setSelectedBus(b);
+                  }}
+                />
               </div>
-
-              {/* Bottom Live AI Activity Ticker */}
-              <ActivityTicker
-                logs={activityLogs}
-                onSelectAlertCode={(code) => {
-                  const match = alerts.find(a => a.alert_code === code);
-                  if (match) setSelectedIncident(match);
-                }}
-              />
-
             </div>
-          )}
 
-          {/* VIEW B: Fleet Tracking */}
-          {activeTab === 'fleet' && (
-            <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div>
-                  <h1 className="text-lg font-bold text-slate-900">Active Bus Fleet Roving Sensing Network</h1>
-                  <p className="text-xs text-slate-500">Real-time edge micro-node telemetry and camera stream status</p>
-                </div>
-                <span className="text-xs font-mono font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md border border-blue-200">
-                  {buses.length} Mobile Nodes Online
-                </span>
+            {/* COLUMN 3: RIGHT PRIORITY TABLE (Matching Wireframe Columns: #, Lat:Long, Last viewed, No of times, Risk) */}
+            <div className="w-96 lg:w-[420px] p-3 pl-0 flex flex-col shrink-0 bg-[#F1F3F5] overflow-hidden">
+              <PriorityTable
+                alerts={alerts}
+                selectedCategory={selectedCategory}
+                selectedIncident={selectedIncident}
+                onSelectIncident={(al) => setSelectedIncident(al)}
+                onInspectIncident={(al) => setSelectedIncident(al)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* VIEW B: Dedicated Separate Simulation Screen */}
+        {activeTab === 'simulation' && (
+          <SimulationView
+            activeCity={activeCity}
+            activeBus={activeBus}
+            activeBusId={activeBusId}
+            buses={buses}
+            activeCamera={activeCamera}
+            isPlaying={isPlaying}
+            speed={speed}
+            latestDetection={latestDetection}
+            systemInfo={systemInfo}
+            alerts={alerts}
+            videoProgress={videoProgress}
+            onTogglePlay={handleTogglePlay}
+            onStep={handleStepSimulation}
+            onChangeSpeed={(s) => setSpeed(s)}
+            onSelectBus={(busId) => {
+              setVideoProgress(0);
+              lastWaypointRef.current = -1;
+              handleSelectBusId(busId);
+            }}
+            onSelectCamera={handleSelectCamera}
+            onVideoProgress={handleVideoProgress}
+            onSendLiveFrame={handleSendLiveFrame}
+            onInspectIncident={(al) => setSelectedIncident(al)}
+            onReturnToCommand={() => setActiveTab('command')}
+          />
+        )}
+
+        {/* VIEW B: Fleet Tracking Large Canvas */}
+        {activeTab === 'fleet' && (
+          <div className="flex-1 p-4 md:p-6 space-y-4 max-w-7xl mx-auto w-full flex flex-col overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h1 className="text-lg font-bold text-slate-900">Active Bus Fleet Roving Sensing Network · {activeCity.toUpperCase()}</h1>
+                <p className="text-xs text-slate-500">Live full-city geospatial tracking across all mobile edge-AI nodes</p>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex items-center space-x-2">
                 {buses.map((bus) => (
-                  <div
+                  <button
                     key={bus.id}
                     onClick={() => {
                       handleSelectBusId(bus.bus_label);
                       setSelectedBus(bus);
-                      setActiveTab('command');
                     }}
-                    className={`bg-white border rounded-xl p-5 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer space-y-3 ${
-                      activeBusId === bus.bus_label ? 'border-blue-600 ring-2 ring-blue-100 shadow-sm' : 'border-slate-200'
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                      activeBusId === bus.bus_label
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2.5">
-                        <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center">
-                          <Bus className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-sm text-slate-900">{bus.bus_label}</div>
-                          <div className="text-[11px] font-mono text-slate-400">{bus.bus_number}</div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">
-                        ONLINE
-                      </span>
-                    </div>
-
-                    <div className="text-xs text-slate-600 font-medium">
-                      {bus.route_name}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs pt-2 border-t border-slate-100 font-mono">
-                      <div className="bg-slate-50 p-2 rounded-lg">
-                        <span className="text-[9px] text-slate-400 block">SPEED</span>
-                        <b className="text-slate-800">{bus.speed_kmh} km/h</b>
-                      </div>
-                      <div className="bg-red-50 p-2 rounded-lg">
-                        <span className="text-[9px] text-red-500 block">POTHOLES</span>
-                        <b className="text-red-700">{bus.total_potholes}</b>
-                      </div>
-                      <div className="bg-amber-50 p-2 rounded-lg">
-                        <span className="text-[9px] text-amber-500 block">VEHICLES</span>
-                        <b className="text-amber-700">{bus.total_vehicles}</b>
-                      </div>
-                    </div>
-
-                    <button className="w-full mt-2 bg-slate-900 text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-slate-800 transition-colors">
-                      Switch Live Feed to {bus.bus_label} →
-                    </button>
-                  </div>
+                    {bus.bus_label}
+                  </button>
                 ))}
               </div>
+            </div>
 
-              {/* Map Preview for fleet */}
-              <div className="h-80 w-full rounded-xl overflow-hidden border border-slate-200">
-                <LiveMap 
-                  alerts={alerts} 
-                  buses={buses} 
-                  activeBus={activeBus} 
-                  isPlaying={isPlaying}
-                  onSelectBus={(b) => {
-                    handleSelectBusId(b.bus_label);
-                    setSelectedBus(b);
-                  }} 
-                />
+            <div className="flex-1 min-h-[560px] rounded-2xl overflow-hidden border border-slate-200 shadow-md">
+              <LiveMap
+                activeCity={activeCity}
+                selectedCategory={selectedCategory}
+                alerts={alerts}
+                buses={buses}
+                activeBus={activeBus}
+                isPlaying={isPlaying}
+                videoProgress={videoProgress}
+                selectedIncident={selectedIncident}
+                onSelectAlert={(al) => setSelectedIncident(al)}
+                onSelectBus={(b) => setSelectedBus(b)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* VIEW C: Road Defects Priority 2-Column Grid */}
+        {activeTab === 'potholes' && (
+          <div className="flex-1 p-6 space-y-6 max-w-6xl mx-auto w-full overflow-y-auto">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h1 className="text-lg font-bold text-slate-900">Road Defect & Hazard Priority Grid · {activeCity.toUpperCase()}</h1>
+                <p className="text-xs text-slate-500">Autonomous edge detections ranked by severity and municipal hazard score</p>
+              </div>
+              <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+                {['ALL', 'CRITICAL', 'HIGH', 'MEDIUM'].map((sev) => (
+                  <button
+                    key={sev}
+                    onClick={() => setSeverityFilter(sev)}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                      severityFilter === sev ? 'bg-white font-bold text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {sev}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* VIEW C: Road Defects Priority Queue */}
-          {activeTab === 'potholes' && (
-            <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                <div>
-                  <h1 className="text-lg font-bold text-slate-900">Road Defect & Pothole Priority Queue</h1>
-                  <p className="text-xs text-slate-500">Autonomous edge detections ranked by severity and municipal hazard score</p>
-                </div>
-                
-                {/* Severity Filter */}
-                <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
-                  {['ALL', 'CRITICAL', 'HIGH', 'MEDIUM'].map((sev) => (
-                    <button
-                      key={sev}
-                      onClick={() => setSeverityFilter(sev)}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                        severityFilter === sev ? 'bg-white font-bold text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {sev}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Incidents Table / Cards */}
-              <div className="space-y-3">
-                {alerts
-                  .filter(a => a.alert_type === 'pothole')
-                  .filter(a => severityFilter === 'ALL' || a.severity === severityFilter)
-                  .map((alert) => (
-                    <div
-                      key={alert.id}
-                      onClick={() => setSelectedIncident(alert)}
-                      className="bg-white border border-slate-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4"
-                    >
-                      <div className="flex items-center space-x-3.5">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 ${
-                          alert.severity === 'CRITICAL' ? 'bg-red-600' : 'bg-rose-500'
-                        }`}>
-                          <Disc className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-mono font-bold text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
-                              #{alert.alert_code}
-                            </span>
-                            <span className="text-xs font-bold text-slate-900">
-                              {alert.location_name}
-                            </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              alert.status === 'DISPATCHED' ? 'bg-purple-100 text-purple-700' :
-                              alert.status === 'VERIFIED' ? 'bg-blue-100 text-blue-700' :
-                              alert.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-700' :
-                              'bg-amber-100 text-amber-700'
-                            }`}>
-                              ● {alert.status}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-1">
-                            Reported by <b>{alert.bus_id}</b> · Est Depth: <b>{alert.defect_depth_est}</b> · Area: <b>{alert.defect_area_est}</b>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-4 shrink-0">
-                        <div className="text-right">
-                          <div className="text-xs font-mono font-bold text-red-600">
-                            {alert.severity} SEVERITY
-                          </div>
-                          <div className="text-[11px] text-slate-400 font-mono">
-                            {(alert.confidence * 100).toFixed(1)}% Conf
-                          </div>
-                        </div>
-                        <div className="text-slate-400 group-hover:text-slate-900">
-                          <ArrowUpRight className="w-4 h-4" />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {/* VIEW D: Traffic Density */}
-          {activeTab === 'traffic' && (
-            <div className="p-6 space-y-6 max-w-6xl mx-auto w-full">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div>
-                  <h1 className="text-lg font-bold text-slate-900">Vehicular Flow & Traffic Density Monitor</h1>
-                  <p className="text-xs text-slate-500">Autonomous multi-class vehicle detection per frame (Cars, Buses, Trucks, Motorcycles)</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {alerts.filter(a => a.alert_type === 'vehicle_density').map((alert) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {alerts
+                .filter((a) => severityFilter === 'ALL' || a.severity === severityFilter)
+                .map((alert) => (
                   <div
                     key={alert.id}
                     onClick={() => setSelectedIncident(alert)}
-                    className="bg-white border border-slate-200 rounded-xl p-4 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer space-y-3"
+                    className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-blue-500 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between group shadow-xs"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200">
-                          <Car className="w-4 h-4" />
-                        </div>
-                        <span className="font-bold text-xs text-slate-900">
-                          {alert.location_name}
+                    <div className="relative w-full h-44 bg-slate-100 overflow-hidden">
+                      <img
+                        src={alert.annotated_image_url || alert.raw_image_url || '/uploads/sample_sus_pothole.jpg'}
+                        alt={alert.alert_type}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
+                      />
+                      <div className="absolute top-2 left-2 flex items-center space-x-1.5">
+                        <span className="bg-white/90 text-slate-800 font-mono text-[10px] font-bold px-2 py-0.5 rounded shadow-xs backdrop-blur-xs border border-slate-200">
+                          {alert.alert_code}
+                        </span>
+                        <span
+                          className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded uppercase ${
+                            alert.severity === 'CRITICAL'
+                              ? 'bg-red-600 text-white'
+                              : alert.severity === 'HIGH'
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-blue-600 text-white'
+                          }`}
+                        >
+                          {alert.severity}
                         </span>
                       </div>
-                      <span className="font-mono text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                        {alert.vehicle_count} Vehicles
-                      </span>
+                      <div className="absolute bottom-2 right-2 bg-white/90 text-slate-800 font-mono text-[10px] font-bold px-2 py-0.5 rounded shadow-xs backdrop-blur-xs border border-slate-200">
+                        Conf: {(alert.confidence * 100).toFixed(1)}%
+                      </div>
                     </div>
 
-                    <div className="text-xs text-slate-600">
-                      Reporting bus: <b>{alert.bus_id}</b> ({alert.route_id})
+                    <div className="p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
+                          {alert.alert_type.toUpperCase().replace(/_/g, ' ')}
+                        </h3>
+                        <span className="text-[10px] font-mono text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 font-bold">
+                          {alert.sighting_count || 1} Passes
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">{alert.location_name}</p>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-600 bg-slate-50 p-2 rounded-lg border">
+                        <div>Depth: <b className="text-slate-900">{alert.defect_depth_est || 'N/A'}</b></div>
+                        <div>Area: <b className="text-slate-900">{alert.defect_area_est || 'N/A'}</b></div>
+                      </div>
                     </div>
                   </div>
                 ))}
-              </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* VIEW E: Analytics View */}
-          {activeTab === 'analytics' && (
+        {/* VIEW D: Urban Analytics */}
+        {activeTab === 'analytics' && (
+          <div className="flex-1 p-6 max-w-6xl mx-auto w-full overflow-y-auto">
             <AnalyticsView stats={stats} alerts={alerts} />
-          )}
-
-        </main>
-
+          </div>
+        )}
       </div>
 
-      {/* 3. Contextual Artifact Drawers */}
+      {/* 3. MODALS & DRAWERS */}
+      {/* Evidence Inspection Drawer (Full-Screen or Slide-in) */}
       {selectedIncident && (
         <IncidentDrawer
           incident={selectedIncident}
+          isFullScreen={activeTab === 'potholes' || activeTab === 'traffic'}
           onClose={() => setSelectedIncident(null)}
           onUpdateStatus={handleUpdateStatus}
         />
       )}
 
+      {/* Bus Telemetry Drawer */}
       {selectedBus && (
         <BusDetailDrawer
           bus={selectedBus}
           onClose={() => setSelectedBus(null)}
-          alerts={alerts}
+          onSelectBus={(busId) => handleSelectBusId(busId)}
         />
       )}
 
+      {/* Watchlist Manager Modal */}
+      <WatchlistModal
+        isOpen={showWatchlistModal}
+        onClose={() => setShowWatchlistModal(false)}
+      />
+
+      {/* Signboard Inventory Modal */}
+      <SignboardsModal
+        isOpen={showSignboardsModal}
+        onClose={() => setShowSignboardsModal(false)}
+        activeCity={activeCity}
+      />
+
+      {/* AI Agents Modal */}
       {showAgentsModal && (
         <AIAgentsDrawer onClose={() => setShowAgentsModal(false)} />
       )}
 
+      {/* Manual Upload Modal */}
       {showUploadModal && (
         <ManualUploadModal
           isOpen={showUploadModal}
           onClose={() => setShowUploadModal(false)}
-          onSuccess={(res) => {
-            loadAllData();
-          }}
+          onUploadSuccess={() => loadAllData(activeCity)}
         />
       )}
-
     </div>
   );
 }
