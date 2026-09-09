@@ -255,20 +255,15 @@ def toggle_playback(play: bool = Query(...)):
 
 @router.post("/reset")
 def reset_simulation_data(clean_slate: bool = Query(True), db: Session = Depends(get_db)):
-    """Reset simulation back to start and clear all historical data for a clean jury demonstration"""
-    sim_state.bus_steps = {"BUS-104": 0, "BUS-218": 0, "BUS-301": 0}
+    """Reset simulation back to start and reload the comprehensive demonstration dataset"""
+    sim_state.bus_steps = {"BUS-104": 0, "BUS-218": 0, "BUS-301": 0, "HYD-101": 0, "HYD-204": 0, "HYD-305": 0}
     sim_state.is_playing = False
 
-    # Clear all historical alerts, activity logs, and bus records
-    db.query(Alert).delete()
-    db.query(ActivityLog).delete()
-    db.query(Bus).delete()
-    db.commit()
-
-    initialize_fleet_and_demo_data(db, clean_slate=clean_slate)
+    from seed_demo_data import run_seed
+    run_seed()
 
     return {
         "status": "success", 
-        "message": "All previous data cleared. System reset to fresh state for jury demonstration.",
+        "message": "System reset to pristine demonstration state with comprehensive alerts, fleet, watchlist, and signboards across Hyderabad and Pune.",
         "clean_slate": clean_slate
     }

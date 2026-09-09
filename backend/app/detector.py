@@ -56,12 +56,19 @@ def get_models():
             weights_path = WEIGHTS_DIR / "yolov8n.pt"
             _yolo_vehicle_model = YOLO(str(weights_path) if weights_path.exists() else "yolov8n.pt")
             
-            # 2. Specialized Deep Learning Pothole Model (Fine-tuned on RDD / Pothole dataset)
-            pothole_weights = WEIGHTS_DIR / "yolov8_pothole.pt"
-            if not pothole_weights.exists():
-                pothole_weights = WEIGHTS_DIR / "pothole_yolov8.pt"
+            # 2. Specialized Deep Learning Pothole Model
+            # Priority 1: mfranzon/pothole-yolo26 (fine-tuned on dashcam & street footage, ~21.8M params)
+            # Priority 2: Samdutse/pothole-yolov8 (fine-tuned on Smartathon/Roboflow, ~11.1M params)
+            # Priority 3: Default yolov8_pothole.pt fallback
+            pothole_candidates = [
+                WEIGHTS_DIR / "pothole_yolo26.pt",
+                WEIGHTS_DIR / "pothole_samdutse_yolov8.pt",
+                WEIGHTS_DIR / "yolov8_pothole.pt",
+                WEIGHTS_DIR / "pothole_yolov8.pt"
+            ]
+            pothole_weights = next((w for w in pothole_candidates if w.exists()), None)
                 
-            if pothole_weights.exists():
+            if pothole_weights is not None:
                 _yolo_pothole_model = YOLO(str(pothole_weights))
                 print(f"[AI ENGINE] Loaded dedicated Road Pothole Neural Network: {pothole_weights.name}")
             else:
@@ -736,17 +743,6 @@ def process_frame(
     cv2.putText(annotated, f"GPS: {gps_lat:.4f} N, {gps_lng:.4f} E | SPEED: {speed_kmh:.0f} km/h", (22, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (148, 163, 184), 1, cv2.LINE_AA)
     cv2.putText(annotated, f"TIME: {time_str} | VEHICLES: {total_vehicles} ({density_level})", (22, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (56, 189, 248), 1, cv2.LINE_AA)
 
-    # 4. Save Raw & Annotated Images to uploads
-    file_id = f"{uuid.uuid4().hex[:10]}"
-    raw_filename = f"raw_{file_id}.jpg"
-    ann_filename = f"ann_{file_id}.jpg"
-
-    raw_path = UPLOADS_DIR / raw_filename
-    ann_path = UPLOADS_DIR / ann_filename
-
-    cv2.imwrite(str(raw_path), frame)
-    cv2.imwrite(str(ann_path), annotated)
-
     has_pothole = len(potholes) > 0
     pothole_highest_sev = "NONE"
     max_conf = 0.92
@@ -763,11 +759,29 @@ def process_frame(
             pothole_highest_sev = "LOW"
         max_conf = max(p.get("confidence", 0.85) for p in potholes)
 
+    # 4. Save Raw & Annotated Images to uploads (Only on defects/chokepoints to prevent disk I/O bottleneck on continuous frames)
+    file_id = f"{uuid.uuid4().hex[:10]}"
+    raw_filename = f"raw_{file_id}.jpg"
+    ann_filename = f"ann_{file_id}.jpg"
+
+    if has_pothole or total_vehicles >= 8:
+        raw_path = UPLOADS_DIR / raw_filename
+        ann_path = UPLOADS_DIR / ann_filename
+        cv2.imwrite(str(raw_path), frame)
+        cv2.imwrite(str(ann_path), annotated)
+    else:
+        raw_filename = "feed_nominal.jpg"
+        ann_filename = "feed_nominal.jpg"
+
     return {
         "raw_image_url": f"/uploads/{raw_filename}",
         "annotated_image_url": f"/uploads/{ann_filename}",
+        "frame_width": w,
+        "frame_height": h,
+        "road_polygon": road_poly.tolist() if hasattr(road_poly, 'tolist') else road_poly,
         "total_vehicles": total_vehicles,
         "vehicle_counts": vehicle_counts,
+        "vehicle_boxes": vehicle_boxes,
         "density_level": density_level,
         "potholes": potholes,
         "has_pothole": has_pothole,

@@ -327,19 +327,28 @@ export default function LiveMap({
     .filter((alert) => alert.latitude != null && alert.longitude != null && isFinite(alert.latitude) && isFinite(alert.longitude))
     .filter((alert) => {
       if (selectedCategory === 'all') return true;
-      if (selectedCategory === 'potholes') return alert.alert_type === 'pothole';
+      if (selectedCategory === 'road' || selectedCategory === 'all_road') {
+        return ['pothole', 'water_logging', 'road_crack', 'road_damage', 'garbage', 'missing_divider', 'zebra_fading'].includes(alert.alert_type);
+      }
+      if (selectedCategory === 'traffic' || selectedCategory === 'all_traffic') {
+        return ['vehicle_density', 'congestion'].includes(alert.alert_type);
+      }
+      if (selectedCategory === 'safety' || selectedCategory === 'all_safety') {
+        return ['overloaded_two_wheeler', 'helmet_violation', 'rash_driving', 'accident', 'watchlist_match'].includes(alert.alert_type);
+      }
+      if (selectedCategory === 'potholes' || selectedCategory === 'pothole') return alert.alert_type === 'pothole';
       if (selectedCategory === 'water_logging') return alert.alert_type === 'water_logging';
       if (selectedCategory === 'missing_divider') return alert.alert_type === 'missing_divider';
-      if (selectedCategory === 'damaged_road') return ['road_crack', 'road_damage'].includes(alert.alert_type);
+      if (selectedCategory === 'damaged_road' || selectedCategory === 'road_crack') return ['road_crack', 'road_damage'].includes(alert.alert_type);
       if (selectedCategory === 'garbage') return alert.alert_type === 'garbage';
       if (selectedCategory === 'zebra_fading') return alert.alert_type === 'zebra_fading';
       if (selectedCategory === 'congestion') return alert.alert_type === 'congestion';
       if (selectedCategory === 'vehicle_density') return alert.alert_type === 'vehicle_density';
       if (selectedCategory === 'overloaded_two_wheeler') return alert.alert_type === 'overloaded_two_wheeler';
       if (selectedCategory === 'helmet_violation') return alert.alert_type === 'helmet_violation';
-      if (selectedCategory === 'accident') return ['accident', 'rash_driving'].includes(alert.alert_type);
+      if (selectedCategory === 'accident' || selectedCategory === 'rash_driving') return ['accident', 'rash_driving'].includes(alert.alert_type);
       if (selectedCategory === 'watchlist_match') return alert.alert_type === 'watchlist_match';
-      return true;
+      return alert.alert_type === selectedCategory;
     });
 
   return (

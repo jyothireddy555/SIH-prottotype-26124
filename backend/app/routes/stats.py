@@ -43,8 +43,8 @@ def get_stats(city: Optional[str] = Query("hyderabad"), db: Session = Depends(ge
     avg_confidence = round(float(avg_conf_row), 3) if avg_conf_row else 0.942
 
     # Pavement Condition Index (PCI / Road Health Index: 0 to 100)
-    pci_deduct = (critical_severity_count * 4.5) + (high_severity_count * 2.0) + (total_potholes * 0.8)
-    road_health_index = max(round(100.0 - pci_deduct, 1), 35.0)
+    pci_deduct = (critical_severity_count * 1.5) + (high_severity_count * 0.8) + (total_potholes * 0.4)
+    road_health_index = max(round(100.0 - pci_deduct, 1), 50.0)
 
     # Severity breakdown
     severity_breakdown = {
@@ -56,9 +56,13 @@ def get_stats(city: Optional[str] = Query("hyderabad"), db: Session = Depends(ge
 
     # Defect type breakdown
     defect_type_breakdown = {
-        "Potholes": total_potholes,
+        "Potholes & Cavities": total_potholes,
         "Waterlogging Pools": total_water_logging,
-        "Traffic Density Spikes": total_traffic_alerts,
+        "Missing Median Dividers": alert_q.filter(Alert.alert_type == "missing_divider").count(),
+        "Road Cracks & Damage": alert_q.filter(Alert.alert_type.in_(["road_crack", "road_damage"])).count(),
+        "Roadside Garbage / Waste": alert_q.filter(Alert.alert_type == "garbage").count(),
+        "Faded Zebra Crossings": alert_q.filter(Alert.alert_type == "zebra_fading").count(),
+        "Traffic Flow & Congestion": total_traffic_alerts,
         "Safety Violations": total_safety_alerts,
         "ANPR Watchlist Hits": total_watchlist_alerts
     }

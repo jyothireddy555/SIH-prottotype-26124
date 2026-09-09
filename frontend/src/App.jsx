@@ -3,6 +3,7 @@ import { api } from './api';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import SimulationView from './components/SimulationView';
+import ExecutiveSummaryBar from './components/ExecutiveSummaryBar';
 import LiveMap, { 
   route115Coords, 
   route500DCoords, 
@@ -152,6 +153,9 @@ export default function App() {
       if (res && res.detection) {
         setLatestDetection(res.detection);
       }
+      if (res && res.created_alerts && res.created_alerts.length > 0) {
+        loadAllData(activeCity);
+      }
     } catch (e) {
       console.error('Live frame error:', e);
     }
@@ -274,26 +278,34 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. Main Work Area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* COLUMN 1: LEFT TAB BAR & CATEGORIES (Persistent for Command Center & Simulation) */}
-        {(activeTab === 'command' || activeTab === 'simulation') && (
-          <Sidebar
-            activeTab={activeTab}
-            onSelectTab={(tab) => setActiveTab(tab)}
-            activeCity={activeCity}
-            selectedCategory={selectedCategory}
-            onSelectCategory={(cat) => setSelectedCategory(cat)}
-            alerts={alerts}
-            stats={stats}
-            activeBus={activeBus}
-            isPlaying={isPlaying}
-          />
-        )}
+      {/* 2. Executive Single-Glance KPI Strip (Top of Workspace) */}
+      {(activeTab === 'command' || activeTab === 'analytics') && (
+        <ExecutiveSummaryBar
+          stats={stats}
+          alerts={alerts}
+          buses={buses}
+          activeCity={activeCity}
+        />
+      )}
 
-        {/* VIEW A: Command Center (Center Map + Right Priority Table) */}
+      {/* 3. Main Work Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* VIEW A: Command Center (Exact 3-Column Centralized Panel Layout from Mockup) */}
         {activeTab === 'command' && (
           <div className="flex-1 flex overflow-hidden">
+            {/* COLUMN 1: LEFT SIDEBAR (Streamlined Incident Channels + Active Fleet) */}
+            <Sidebar
+              activeCity={activeCity}
+              selectedCategory={selectedCategory}
+              onSelectCategory={(cat) => setSelectedCategory(cat)}
+              alerts={alerts}
+              buses={buses}
+              activeBus={activeBus}
+              onSelectBus={(busId) => {
+                handleSelectBusId(busId);
+              }}
+            />
+
             {/* COLUMN 2: CENTER MAP */}
             <div className="flex-1 flex flex-col p-3 min-w-0 bg-[#F1F3F5] overflow-hidden">
               <div className="flex-1 rounded-xl overflow-hidden shadow-xs border border-slate-200 bg-white">
@@ -317,8 +329,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* COLUMN 3: RIGHT PRIORITY TABLE (Matching Wireframe Columns: #, Lat:Long, Last viewed, No of times, Risk) */}
-            <div className="w-96 lg:w-[420px] p-3 pl-0 flex flex-col shrink-0 bg-[#F1F3F5] overflow-hidden">
+            {/* COLUMN 3: RIGHT PRIORITY TABLE (Matching Mockup with 460px Spacious Layout) */}
+            <div className="w-[440px] lg:w-[480px] p-3 pl-0 flex flex-col shrink-0 bg-[#F1F3F5] overflow-hidden">
               <PriorityTable
                 alerts={alerts}
                 selectedCategory={selectedCategory}
@@ -439,7 +451,7 @@ export default function App() {
                   >
                     <div className="relative w-full h-44 bg-slate-100 overflow-hidden">
                       <img
-                        src={alert.annotated_image_url || alert.raw_image_url || '/uploads/sample_sus_pothole.jpg'}
+                        src={alert.annotated_image_url || alert.raw_image_url || '/uploads/ann_sample_pothole.jpg'}
                         alt={alert.alert_type}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
                       />
@@ -488,7 +500,7 @@ export default function App() {
         {/* VIEW D: Urban Analytics */}
         {activeTab === 'analytics' && (
           <div className="flex-1 p-6 max-w-6xl mx-auto w-full overflow-y-auto">
-            <AnalyticsView stats={stats} alerts={alerts} />
+            <AnalyticsView stats={stats} alerts={alerts} activeCity={activeCity} />
           </div>
         )}
       </div>

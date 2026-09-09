@@ -4,9 +4,13 @@ import {
   MapPin, CheckCircle, Clock, Truck, Activity
 } from 'lucide-react';
 
-export default function AnalyticsView({ stats, alerts = [] }) {
+export default function AnalyticsView({ stats, alerts = [], activeCity = 'hyderabad' }) {
   const potholes = alerts.filter(a => a.alert_type === 'pothole');
   const traffic = alerts.filter(a => a.alert_type === 'vehicle_density');
+
+  const corridorText = activeCity === 'hyderabad'
+    ? 'Corridor: Hyderabad Transit Network (Hitec City / Secunderabad / Charminar)'
+    : 'Corridor: Pune Transit Network (Hinjewadi / Nagar Rd / Katraj)';
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto overflow-y-auto">
@@ -15,11 +19,11 @@ export default function AnalyticsView({ stats, alerts = [] }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Urban Transit Intelligence Analytics</h1>
-          <p className="text-xs text-slate-500">Municipal Road Quality Index & Traffic Flow Telemetry</p>
+          <p className="text-xs text-slate-500">Municipal Road Quality Index & Traffic Flow Telemetry · {activeCity.toUpperCase()}</p>
         </div>
         <div className="flex items-center space-x-2 text-xs font-mono">
           <span className="px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-700 font-bold">
-            Corridor: Pune Transit Sector 4
+            {corridorText}
           </span>
         </div>
       </div>

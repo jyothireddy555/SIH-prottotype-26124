@@ -236,6 +236,11 @@ sim_state = SimulationState()
 
 def initialize_fleet_and_demo_data(db: Session, clean_slate: bool = False):
     """Seed initial buses along their distinct routes across Hyderabad and Pune, plus baseline signboards and watchlist"""
+    existing_alerts = db.query(Alert).count()
+    if existing_alerts < 30:
+        from seed_demo_data import run_seed
+        run_seed()
+        return
     existing_buses = db.query(Bus).count()
     if existing_buses == 0:
         initial_buses = [
@@ -899,11 +904,11 @@ def step_simulation(db: Session, video_progress: float = None, exact_lat: float 
     # TIMELINE SYNC FIX: Use video_progress to pick waypoint index when available.
     # This ensures detections are placed at the exact road segment the video is showing,
     # not at an arbitrary counter position that drifts from the video timeline.
+    curr_step = sim_state.bus_steps.get(bus_id, 0)
     if video_progress is not None and 0.0 <= video_progress <= 1.0:
         curr_idx = int(video_progress * (len(waypoints) - 1))
         curr_idx = max(0, min(curr_idx, len(waypoints) - 1))
     else:
-        curr_step = sim_state.bus_steps.get(bus_id, 0)
         curr_idx = curr_step % len(waypoints)
 
     waypoint = waypoints[curr_idx]
