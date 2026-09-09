@@ -8,77 +8,44 @@
   }
 }
 
-/* Custom scrollbar for data tables and activity feeds */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #F1F5F9;
-}
-::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
-}
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
-/* Leaflet Custom Marker & Popup Overrides for Light Theme */
+/* ── Leaflet Popup Overrides ── */
 .leaflet-popup-content-wrapper {
   background: #FFFFFF !important;
   color: #0F172A !important;
-  border-radius: 12px !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06) !important;
   border: 1px solid #E2E8F0 !important;
   padding: 0 !important;
 }
+.leaflet-popup-content { margin: 0 !important; line-height: 1.5 !important; }
+.leaflet-popup-tip { background: #FFFFFF !important; box-shadow: none !important; }
+.leaflet-popup-close-button { display: none !important; }
 
-.leaflet-popup-content {
-  margin: 0 !important;
-  line-height: 1.4 !important;
+/* ── Glassmorphism panel (top toolbar) ── */
+.map-glass-panel {
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(226,232,240,0.8);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-.leaflet-popup-tip {
-  background: #FFFFFF !important;
-  box-shadow: none !important;
-}
-
-/* Marker pulsing animations */
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
-  }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
-  }
-}
-
-.pulse-pothole {
-  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
+/* ── Bus marker pulse (active+moving) ── */
 @keyframes pulse-bus {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.6);
-  }
-  70% {
-    transform: scale(1.05);
-    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
-  }
+  0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
+  70%  { box-shadow: 0 0 0 8px rgba(16,185,129,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
 }
 
-.pulse-bus-icon {
-  animation: pulse-bus 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+/* ── P0 incident pulse ── */
+@keyframes incident-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(220,38,38,0.6); }
+  70%  { box-shadow: 0 0 0 8px rgba(220,38,38,0); }
+  100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
 }

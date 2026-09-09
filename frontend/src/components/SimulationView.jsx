@@ -714,7 +714,7 @@ export default function SimulationView({
                     <span className="text-red-700 font-bold">~18.2 GB / hour / bus</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>RoadWise Edge Telemetry:</span>
+                    <span>AI Urban Intelligence Edge Telemetry:</span>
                     <span className="text-emerald-700 font-bold">~2.4 MB / hour / bus</span>
                   </div>
                   <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium">

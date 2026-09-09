@@ -139,14 +139,14 @@ export default function Sidebar({
   const cityBuses =
     activeCity === 'hyderabad'
       ? [
-          { id: 'HYD-101', route: 'Route 216', name: 'Hitec City / Financial Dist', speed: 32 },
-          { id: 'HYD-204', route: 'Route 10H', name: 'Secunderabad / Begumpet', speed: 28 },
-          { id: 'HYD-305', route: 'Route 5K', name: 'Charminar Express', speed: 25 }
+          { id: 'HYD-101', route: 'Route 216', name: 'Gachibowli - Hitec City Corridor', speed: 36 },
+          { id: 'HYD-204', route: 'Route 10H', name: 'Mehdipatnam - Secunderabad Corridor', speed: 28 },
+          { id: 'HYD-305', route: 'Route 5K', name: 'Charminar - Koti Corridor', speed: 25 }
         ]
       : [
-          { id: 'BUS-104', route: 'Route 115', name: 'Swargate / Katraj', speed: 30 },
-          { id: 'BUS-218', route: 'Route 500D', name: 'Hinjawadi IT Corridor', speed: 34 },
-          { id: 'BUS-301', route: 'Route 335E', name: 'Hadapsar / Station', speed: 29 }
+          { id: 'BUS-104', route: 'Route 115', name: 'Sus Road - Pashan Corridor', speed: 34 },
+          { id: 'BUS-218', route: 'Route 500D', name: 'Nagar Rd - Yerawada Corridor', speed: 26 },
+          { id: 'BUS-301', route: 'Route 335E', name: 'Katraj - Swargate Highway Corridor', speed: 29 }
         ];
 
   return (

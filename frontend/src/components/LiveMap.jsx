@@ -1,7 +1,76 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Layers, Eye, Disc, Car, Bus as BusIcon, Flame, AlertTriangle, Droplets } from 'lucide-react';
+import 'leaflet.heat';
+import {
+  Layers,
+  Flame,
+  Maximize2,
+  Minimize2,
+  Target,
+  Check,
+  Route,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
+
+// === SIH GIS HEATMAP MODES ===
+export const HEATMAP_MODES = {
+  violations: {
+    id: 'violations',
+    label: 'Traffic Violations',
+    icon: '🚦',
+    title: 'Traffic Violation Hotspots',
+    desc: 'Concentration of AI-detected violations from mobile buses.',
+    scale: 1.0,
+    types: ['overloaded_two_wheeler', 'helmet_violation', 'rash_driving'],
+  },
+  triple: {
+    id: 'triple',
+    label: 'Triple Riding',
+    icon: '🏍️',
+    title: 'Triple-Riding Hotspots',
+    desc: 'Locations where repeated triple-riding detections occur.',
+    scale: 0.85,
+    types: ['overloaded_two_wheeler'],
+  },
+  helmet: {
+    id: 'helmet',
+    label: 'No Helmet',
+    icon: '🪖',
+    title: 'No-Helmet Hotspots',
+    desc: 'Road segments with frequent helmet violations.',
+    scale: 0.9,
+    types: ['helmet_violation'],
+  },
+  congestion: {
+    id: 'congestion',
+    label: 'Congestion',
+    icon: '🚗',
+    title: 'Congestion Hotspots',
+    desc: 'Areas showing repeated low-speed / high-density traffic.',
+    scale: 0.75,
+    types: ['vehicle_density', 'congestion'],
+  },
+  risk: {
+    id: 'risk',
+    label: 'Road Safety Risk',
+    icon: '⚠️',
+    title: 'Road Safety Risk',
+    desc: 'Combined score from violations, accidents, congestion and road deficiencies.',
+    scale: 1.15,
+    types: ['pothole', 'water_logging', 'road_crack', 'missing_divider', 'accident', 'watchlist_match', 'helmet_violation', 'overloaded_two_wheeler', 'congestion', 'vehicle_density'],
+  },
+  accident: {
+    id: 'accident',
+    label: 'Accident Hotspots',
+    icon: '💥',
+    title: 'Accident Hotspots',
+    desc: 'Historical and AI-detected incident concentration.',
+    scale: 0.7,
+    types: ['accident', 'watchlist_match'],
+  },
+};
 
 // Fix default Leaflet icon paths
 delete L.Icon.Default.prototype._getIconUrl;
@@ -11,288 +80,322 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// Custom 3D SVG Bus Icon
-const createBusIcon = (label, speed, isMoving, isActive) => {
-  const uid = `${label}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const badgeColor = isMoving 
-    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 ring-2 ring-emerald-400' 
-    : isActive 
-    ? 'bg-blue-50 text-blue-800 border-blue-300' 
-    : 'bg-slate-50 text-slate-800 border-slate-300';
+// === MAP TILE STYLES ===
+export const MAP_STYLES = {
+  voyager: {
+    id: 'voyager',
+    name: 'Daylight',
+    icon: '☀️',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CartoDB &amp; OpenStreetMap',
+    isDark: false,
+  },
+  dark: {
+    id: 'dark',
+    name: 'Night',
+    icon: '🌙',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CartoDB Dark Matter',
+    isDark: true,
+  },
+  satellite: {
+    id: 'satellite',
+    name: 'Satellite',
+    icon: '🛰️',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri World Imagery',
+    isDark: true,
+  },
+  positron: {
+    id: 'positron',
+    name: 'Minimal',
+    icon: '📄',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; CartoDB Positron',
+    isDark: false,
+  },
+  topo: {
+    id: 'topo',
+    name: 'Terrain',
+    icon: '⛰️',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri Topo Map',
+    isDark: false,
+  },
+  osm: {
+    id: 'osm',
+    name: 'OpenStreetMap',
+    icon: '🗺️',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
+    isDark: false,
+  },
+};
 
-  const pulseClass = isMoving ? 'pulse-bus-icon' : '';
-  const statusDot = isMoving 
-    ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-ping mr-1"></span>' 
-    : '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block mr-1"></span>';
-  const speedText = isMoving ? `${speed} km/h` : 'STOPPED';
+// === ALERT TYPE CONFIG ===
+const ALERT_CONFIG = {
+  watchlist_match:       { emoji: '🚨', color: '#DC2626', priority: 0 },
+  accident:              { emoji: '💥', color: '#EF4444', priority: 0 },
+  overloaded_two_wheeler:{ emoji: '🛵', color: '#B91C1C', priority: 1 },
+  helmet_violation:      { emoji: '⛑️', color: '#D97706', priority: 1 },
+  vehicle_density:       { emoji: '🚗', color: '#F59E0B', priority: 2 },
+  congestion:            { emoji: '🔴', color: '#EA580C', priority: 2 },
+  pothole:               { emoji: '🕳️', color: '#7C3AED', priority: 2 },
+  water_logging:         { emoji: '🌊', color: '#2563EB', priority: 2 },
+  road_crack:            { emoji: '⚡', color: '#9333EA', priority: 2 },
+  missing_divider:       { emoji: '🚧', color: '#CA8A04', priority: 3 },
+  zebra_fading:          { emoji: '🦓', color: '#A16207', priority: 3 },
+  garbage:               { emoji: '🗑️', color: '#65A30D', priority: 3 },
+};
 
+// === BEARING CALC ===
+export function calculateBearing(startLat, startLng, endLat, endLng) {
+  if (startLat === endLat && startLng === endLng) return 0;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLng = toRad(endLng - startLng);
+  const y = Math.sin(dLng) * Math.cos(toRad(endLat));
+  const x =
+    Math.cos(toRad(startLat)) * Math.sin(toRad(endLat)) -
+    Math.sin(toRad(startLat)) * Math.cos(toRad(endLat)) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+// === POSITION INTERPOLATION ===
+export function getInterpolatedStateAlongRoute(coords, progress) {
+  if (!coords || coords.length === 0) return { position: [17.4435, 78.3772], bearing: 0, segmentIndex: 0 };
+  if (coords.length === 1) return { position: coords[0], bearing: 0, segmentIndex: 0 };
+  const p = Math.max(0, Math.min(progress, 0.99999));
+  const scaledIndex = p * (coords.length - 1);
+  const segmentIdx = Math.floor(scaledIndex);
+  const segFrac = scaledIndex - segmentIdx;
+  const p1 = coords[segmentIdx];
+  const p2 = coords[Math.min(segmentIdx + 1, coords.length - 1)];
+  const lat = p1[0] + (p2[0] - p1[0]) * segFrac;
+  const lng = p1[1] + (p2[1] - p1[1]) * segFrac;
+  const bearing = calculateBearing(p1[0], p1[1], p2[0], p2[1]);
+  return { position: [lat, lng], bearing, segmentIndex: segmentIdx };
+}
+
+export function interpolatePositionAlongRoute(coords, progress) {
+  return getInterpolatedStateAlongRoute(coords, progress).position;
+}
+
+// === BUS ICON — Detailed top-down transit bus with AI camera sensor ===
+const createBusIcon = (label, speed, isMoving, isActive, bearing = 0) => {
   const isHyd = label.startsWith('HYD');
-  const color1 = isHyd ? '#059669' : label === 'BUS-218' ? '#4F46E5' : label === 'BUS-301' ? '#7C3AED' : '#2563EB';
-  const color2 = isHyd ? '#047857' : label === 'BUS-218' ? '#3730A3' : label === 'BUS-301' ? '#5B21B6' : '#1D4ED8';
-  const color3 = isHyd ? '#064E3B' : label === 'BUS-218' ? '#312E81' : label === 'BUS-301' ? '#4C1D95' : '#1E3A8A';
+  const baseColor = isHyd
+    ? '#10B981'
+    : label === 'BUS-218'
+    ? '#6366F1'
+    : label === 'BUS-301'
+    ? '#8B5CF6'
+    : '#3B82F6';
+  
+  const ringGlow = isActive
+    ? `filter: drop-shadow(0 0 10px ${baseColor});`
+    : 'filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4));';
+  const pulse = isMoving ? 'animation:pulse-bus 2s ease-in-out infinite;' : '';
 
   return L.divIcon({
-    className: 'custom-bus-marker',
+    className: '',
     html: `
-      <div class="relative flex flex-col items-center cursor-pointer transition-transform hover:scale-115">
-        <div class="relative flex items-center justify-center ${pulseClass}">
-          <svg class="w-11 h-11 filter drop-shadow-[0_8px_14px_rgba(0,0,0,0.35)]" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="roofGrad_${uid}" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
-                <stop offset="100%" stop-color="#CBD5E1"/>
-              </linearGradient>
-              <linearGradient id="bodyGrad_${uid}" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="${color1}"/>
-                <stop offset="50%" stop-color="${color2}"/>
-                <stop offset="100%" stop-color="${color3}"/>
-              </linearGradient>
-              <linearGradient id="tireGrad_${uid}" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#334155"/>
-                <stop offset="100%" stop-color="#0F172A"/>
-              </linearGradient>
-            </defs>
-
-            <ellipse cx="32" cy="56" rx="24" ry="5.5" fill="#000000" fill-opacity="0.32"/>
-            <rect x="10" y="44" width="7" height="11" rx="3.5" fill="url(#tireGrad_${uid})" stroke="#64748B" stroke-width="0.8"/>
-            <circle cx="13.5" cy="49.5" r="2" fill="#94A3B8"/>
-            <rect x="47" y="44" width="7" height="11" rx="3.5" fill="url(#tireGrad_${uid})" stroke="#64748B" stroke-width="0.8"/>
-            <circle cx="50.5" cy="49.5" r="2" fill="#94A3B8"/>
-            <rect x="6" y="38" width="6" height="9" rx="2.5" fill="url(#tireGrad_${uid})"/>
-            <rect x="52" y="38" width="6" height="9" rx="2.5" fill="url(#tireGrad_${uid})"/>
-            <path d="M11 46 L53 46 L50 51 L14 51 Z" fill="#0F172A"/>
-
-            <path d="M10 18 C10 12, 14 8, 20 8 L44 8 C50 8, 54 12, 54 18 L54 44 C54 47.5, 50.5 49.5, 46 49.5 L18 49.5 C13.5 49.5, 10 47.5, 10 44 Z" fill="url(#bodyGrad_${uid})" stroke="#FFFFFF" stroke-width="1.6"/>
-            <path d="M14 10 C16 8.8, 22 8.2, 32 8.2 C42 8.2, 48 8.8, 50 10 L48 13.5 L16 13.5 Z" fill="url(#roofGrad_${uid})"/>
-            <rect x="22" y="5" width="20" height="4.5" rx="2" fill="#F8FAFC" stroke="#94A3B8" stroke-width="0.8"/>
-
-            <rect x="18" y="11.5" width="28" height="5.5" rx="1.5" fill="#0F172A" stroke="#334155" stroke-width="0.6"/>
-            <text x="32" y="15.8" fill="#F59E0B" font-size="3.6" font-family="monospace" font-weight="900" text-anchor="middle">${label}</text>
-
-            <path d="M15 19 L49 19 L47 31 L17 31 Z" fill="#0284C7" stroke="#E2E8F0" stroke-width="1.2"/>
-            <line x1="26" y1="19" x2="25" y2="31" stroke="#E2E8F0" stroke-width="1"/>
-            <line x1="38" y1="19" x2="39" y2="31" stroke="#E2E8F0" stroke-width="1"/>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;">
+        <!-- Vehicle Body Container with Directional Rotation -->
+        <div style="
+          transform:rotate(${bearing}deg);
+          transition:transform 0.4s ease;
+          ${ringGlow}${pulse}
+          display:flex;align-items:center;justify-content:center;
+        ">
+          <svg width="34" height="54" viewBox="0 0 34 54" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Headlight Cone / Sensor Field -->
+            <path d="M17 2 L3 22 H31 L17 2 Z" fill="${baseColor}" opacity="0.22"/>
+            
+            <!-- Bus Body Shadow -->
+            <rect x="5" y="8" width="24" height="42" rx="6" fill="rgba(0,0,0,0.35)"/>
+            
+            <!-- Main Bus Chassis -->
+            <rect x="4" y="6" width="26" height="42" rx="6" fill="${baseColor}" stroke="white" stroke-width="2"/>
+            
+            <!-- Front Windshield -->
+            <rect x="7" y="9" width="20" height="8" rx="2" fill="#0F172A"/>
+            <rect x="8" y="10" width="18" height="6" rx="1" fill="#38BDF8" opacity="0.85"/>
+            
+            <!-- Roof AI Edge-Sensing Camera Pod -->
+            <rect x="11" y="21" width="12" height="15" rx="3" fill="white"/>
+            <rect x="13" y="23" width="8" height="11" rx="2" fill="#1E293B"/>
+            <circle cx="17" cy="28" r="3" fill="#38BDF8"/>
+            <circle cx="17" cy="28" r="1.2" fill="white"/>
+            
+            <!-- Side Windows -->
+            <rect x="5" y="19" width="1.5" height="20" rx="0.5" fill="#0F172A"/>
+            <rect x="27.5" y="19" width="1.5" height="20" rx="0.5" fill="#0F172A"/>
+            
+            <!-- Rear Windshield & Brake Lights -->
+            <rect x="7" y="42" width="20" height="3" rx="1" fill="#0F172A"/>
+            <rect x="5.5" y="45" width="4" height="2" rx="0.5" fill="#EF4444"/>
+            <rect x="24.5" y="45" width="4" height="2" rx="0.5" fill="#EF4444"/>
           </svg>
         </div>
-
-        <div class="${badgeColor} text-[10px] font-bold px-2 py-0.5 rounded shadow-md border mt-0.5 whitespace-nowrap flex items-center">
-          ${statusDot}
-          <span>${label} · ${speedText}</span>
+        
+        <!-- Label Badge -->
+        <div style="
+          background:${baseColor};
+          color:white;
+          font-size:9px;
+          font-weight:800;
+          font-family:monospace;
+          padding:2px 7px;
+          border-radius:5px;
+          white-space:nowrap;
+          box-shadow:0 2px 6px rgba(0,0,0,0.4);
+          letter-spacing:0.5px;
+          border:1px solid rgba(255,255,255,0.4);
+        ">
+          ${label} ${isMoving ? `<span style="opacity:0.85;margin-left:3px;">${speed}k</span>` : ''}
         </div>
       </div>
     `,
-    iconSize: [56, 62],
-    iconAnchor: [28, 31]
+    iconSize: [38, 70],
+    iconAnchor: [19, 35],
+    popupAnchor: [0, -38],
   });
 };
 
-// Generic Custom Incident Marker Icon Generator for all Edge-AI Types
+// === INCIDENT ICON — clean dot with emoji, no text label ===
 const createIncidentIcon = (alert) => {
-  const type = alert.alert_type;
-  const isP0 = alert.priority_level === 'P0' || type === 'watchlist_match' || type === 'accident';
-  const isP1 = alert.priority_level === 'P1' || alert.severity === 'CRITICAL';
-  
-  let emoji = '🕳';
-  let bgColor = 'bg-rose-600';
-  let pulseClass = '';
-
-  if (type === 'watchlist_match') {
-    emoji = '🚨';
-    bgColor = 'bg-red-600';
-    pulseClass = 'animate-bounce ring-4 ring-red-400';
-  } else if (type === 'accident') {
-    emoji = '💥';
-    bgColor = 'bg-red-600';
-    pulseClass = 'animate-ping ring-4 ring-red-400';
-  } else if (type === 'water_logging') {
-    emoji = '🌊';
-    bgColor = 'bg-blue-600';
-  } else if (type === 'missing_divider') {
-    emoji = '🚧';
-    bgColor = 'bg-amber-600';
-  } else if (type === 'road_crack' || type === 'road_damage') {
-    emoji = '⚡';
-    bgColor = 'bg-orange-600';
-  } else if (type === 'garbage') {
-    emoji = '🗑';
-    bgColor = 'bg-stone-700';
-  } else if (type === 'zebra_fading') {
-    emoji = '🦓';
-    bgColor = 'bg-yellow-600';
-  } else if (type === 'overloaded_two_wheeler') {
-    emoji = '🛵';
-    bgColor = 'bg-red-700';
-  } else if (type === 'helmet_violation') {
-    emoji = '⛑';
-    bgColor = 'bg-amber-700';
-  } else if (type === 'vehicle_density' || type === 'congestion') {
-    emoji = '🚗';
-    bgColor = 'bg-amber-500';
-  }
-
-  const countBadge = (alert.sighting_count || 1) > 1 
-    ? `<span class="ml-1 bg-amber-200 text-amber-900 px-1 rounded font-extrabold text-[8px]">${alert.sighting_count}x</span>` 
+  const cfg = ALERT_CONFIG[alert.alert_type] || { emoji: '⚠️', color: '#94A3B8', priority: 3 };
+  const isP0 = cfg.priority === 0;
+  const size = isP0 ? 32 : 26;
+  const half = size / 2;
+  const pulse = isP0
+    ? `animation:incident-pulse 1.6s ease-in-out infinite;`
     : '';
 
   return L.divIcon({
-    className: 'custom-incident-marker',
+    className: '',
     html: `
-      <div class="relative flex flex-col items-center cursor-pointer">
-        <div class="${bgColor} text-white w-7 h-7 rounded-full shadow-md border-2 border-white flex items-center justify-center ${pulseClass}">
-          <span class="text-[11px] font-bold">${emoji}</span>
-        </div>
-        <div class="bg-white text-slate-800 text-[9px] font-mono font-bold px-1.5 py-0.2 rounded shadow border border-slate-200 mt-0.5 whitespace-nowrap flex items-center">
-          <span>${alert.alert_code || alert.alert_type}</span>
-          ${countBadge}
-        </div>
+      <div style="
+        width:${size}px;height:${size}px;
+        border-radius:50%;
+        background:${cfg.color};
+        border:2px solid white;
+        display:flex;align-items:center;justify-content:center;
+        box-shadow:0 2px 8px ${cfg.color}88;
+        ${pulse}
+        cursor:pointer;
+      ">
+        <span style="font-size:${isP0 ? 14 : 11}px;line-height:1;">${cfg.emoji}</span>
       </div>
     `,
-    iconSize: [36, 42],
-    iconAnchor: [18, 21]
+    iconSize: [size, size],
+    iconAnchor: [half, half],
+    popupAnchor: [0, -(half + 4)],
   });
 };
 
-// Helper for GPS interpolation
-export function interpolatePositionAlongRoute(coords, progress) {
-  if (!coords || coords.length === 0) return [17.4435, 78.3772];
-  if (coords.length === 1) return coords[0];
-  const p = Math.max(0, Math.min(progress, 0.99999));
-  
-  const scaledIndex = p * (coords.length - 1);
-  const segmentIdx = Math.floor(scaledIndex);
-  const segmentFraction = scaledIndex - segmentIdx;
-  
-  const p1 = coords[segmentIdx];
-  const p2 = coords[Math.min(segmentIdx + 1, coords.length - 1)];
-  
-  const lat = p1[0] + (p2[0] - p1[0]) * segmentFraction;
-  const lng = p1[1] + (p2[1] - p1[1]) * segmentFraction;
-  
-  return [lat, lng];
-}
-
-// MapUpdater: Centers map when selectedIncident, bus move, or city switches
-function MapUpdater({ lat, lng, isMoving, selectedIncident, activeCity }) {
+// === MAP UPDATER ===
+function MapUpdater({ lat, lng, isMoving, selectedIncident, activeCity, centerOnBusSignal }) {
   const map = useMap();
   const prevCityRef = useRef(activeCity);
-  
+
   useEffect(() => {
     if (prevCityRef.current !== activeCity) {
       prevCityRef.current = activeCity;
-      if (activeCity === 'hyderabad') {
-        map.flyTo([17.4435, 78.3772], 13, { duration: 1.5 });
-      } else {
-        map.flyTo([18.5380, 73.7850], 13, { duration: 1.5 });
-      }
+      if (activeCity === 'hyderabad') map.flyTo([17.4435, 78.3772], 13, { duration: 1.5 });
+      else map.flyTo([18.5380, 73.7850], 13, { duration: 1.5 });
       return;
     }
-
-    if (selectedIncident && selectedIncident.latitude && selectedIncident.longitude) {
-      map.flyTo([selectedIncident.latitude, selectedIncident.longitude], 15, { duration: 1.2 });
-    } else if (lat && lng && isMoving) {
+    if (selectedIncident?.latitude && selectedIncident?.longitude) {
+      map.flyTo([selectedIncident.latitude, selectedIncident.longitude], 16, { duration: 1.2 });
+    } else if (lat && lng && (isMoving || centerOnBusSignal)) {
       map.panTo([lat, lng], { animate: true, duration: 0.8 });
     }
-  }, [lat, lng, isMoving, selectedIncident, activeCity, map]);
+  }, [lat, lng, isMoving, selectedIncident, activeCity, map, centerOnBusSignal]);
 
   return null;
 }
 
-// === HYDERABAD ROUTE COORDINATES ===
-export const route216Coords = [
-  [17.4400, 78.3480],
-  [17.4425, 78.3530],
-  [17.4460, 78.3610],
-  [17.4505, 78.3808],
-  [17.4475, 78.3815],
-  [17.4430, 78.3820],
-  [17.4380, 78.3850],
-  [17.4310, 78.3900],
-  [17.4350, 78.3750],
-  [17.4260, 78.3580],
-  [17.4180, 78.3440],
-  [17.4160, 78.3410]
-];
+// === HYDERABAD & PUNE OSRM ROAD GEOMETRY COORDS ===
+import osrmRoutes from './osrm_routes.json';
 
-export const route10HCoords = [
-  [17.3916, 78.4398],
-  [17.3980, 78.4480],
-  [17.4040, 78.4550],
-  [17.4090, 78.4620],
-  [17.4150, 78.4690],
-  [17.4220, 78.4760],
-  [17.4310, 78.4870],
-  [17.4390, 78.4980]
-];
+export const route216Coords = osrmRoutes.route216 || [];
+export const route10HCoords = osrmRoutes.route10H || [];
+export const route5KCoords = osrmRoutes.route5K || [];
+export const route115Coords = osrmRoutes.route115 || [];
+export const route500DCoords = osrmRoutes.route500D || [];
+export const route335ECoords = osrmRoutes.route335E || [];
 
-export const route5KCoords = [
-  [17.3616, 78.4747],
-  [17.3710, 78.4820],
-  [17.3820, 78.4860],
-  [17.3750, 78.5020],
-  [17.3680, 78.5240],
-  [17.3590, 78.5480]
-];
+// Route display config
+const ROUTE_DISPLAY = {
+  'HYD-101': { coords: route216Coords, color: '#10B981', label: 'Route 216' },
+  'HYD-204': { coords: route10HCoords, color: '#0EA5E9', label: 'Route 10H' },
+  'HYD-305': { coords: route5KCoords,  color: '#8B5CF6', label: 'Route 5K'  },
+  'BUS-104': { coords: route115Coords, color: '#3B82F6', label: 'Route 115' },
+  'BUS-218': { coords: route500DCoords,color: '#6366F1', label: 'Route 500D'},
+  'BUS-301': { coords: route335ECoords,color: '#A855F7', label: 'Route 335E'},
+};
 
-// === PUNE ROUTE COORDINATES ===
-export const route115Coords = [
-  [18.5380, 73.7850],
-  [18.5420, 73.7815],
-  [18.5460, 73.7780],
-  [18.5500, 73.7745],
-  [18.5540, 73.7710],
-  [18.5580, 73.7675],
-  [18.5620, 73.7640],
-  [18.5660, 73.7605],
-  [18.5700, 73.7570],
-  [18.5740, 73.7535],
-  [18.5780, 73.7500],
-  [18.5820, 73.7465],
-  [18.5860, 73.7430],
-  [18.5900, 73.7395],
-  [18.5940, 73.7360],
-  [18.5980, 73.7325],
-  [18.6020, 73.7290]
-];
+// Route groups per city
+const HYD_BUS_IDS = ['HYD-101', 'HYD-204', 'HYD-305'];
+const PUNE_BUS_IDS = ['BUS-104', 'BUS-218', 'BUS-301'];
 
-export const route500DCoords = [
-  [18.5284, 73.8740],
-  [18.5320, 73.8790],
-  [18.5360, 73.8845],
-  [18.5400, 73.8900],
-  [18.5440, 73.8955],
-  [18.5480, 73.9010],
-  [18.5520, 73.9065],
-  [18.5560, 73.9120],
-  [18.5600, 73.9175],
-  [18.5640, 73.9230],
-  [18.5680, 73.9285],
-  [18.5720, 73.9340],
-  [18.5760, 73.9395],
-  [18.5800, 73.9450],
-  [18.5840, 73.9505],
-  [18.5880, 73.9560],
-  [18.5920, 73.9615],
-  [18.5960, 73.9670]
-];
+// === LEAFLET HEATMAP LAYER COMPONENT ===
+function LeafletHeatmapLayer({ points, showHeatmap }) {
+  const map = useMap();
+  const heatLayerRef = useRef(null);
 
-export const route335ECoords = [
-  [18.4480, 73.8640],
-  [18.4530, 73.8590],
-  [18.4580, 73.8540],
-  [18.4630, 73.8490],
-  [18.4680, 73.8440],
-  [18.4730, 73.8390],
-  [18.4780, 73.8340],
-  [18.4830, 73.8290],
-  [18.4880, 73.8240],
-  [18.4930, 73.8190],
-  [18.4980, 73.8140],
-  [18.5030, 73.8090],
-  [18.5080, 73.8040],
-  [18.5130, 73.7990],
-  [18.5180, 73.7940]
-];
+  useEffect(() => {
+    if (!map) return;
 
+    if (heatLayerRef.current) {
+      try {
+        map.removeLayer(heatLayerRef.current);
+      } catch (e) {
+        // ignore
+      }
+      heatLayerRef.current = null;
+    }
+
+    if (!showHeatmap || !points || points.length === 0) return;
+
+    try {
+      if (typeof L.heatLayer === 'function') {
+        const heat = L.heatLayer(points, {
+          radius: 30,
+          blur: 20,
+          minOpacity: 0.22,
+          maxZoom: 15,
+          gradient: {
+            0.15: '#2ee6a6',
+            0.4: '#ffe66d',
+            0.65: '#ff8a3d',
+            1.0: '#ff3b4f',
+          },
+        });
+        heat.addTo(map);
+        heatLayerRef.current = heat;
+      }
+    } catch (err) {
+      console.error('Heatmap creation error:', err);
+    }
+
+    return () => {
+      if (heatLayerRef.current && map) {
+        try {
+          map.removeLayer(heatLayerRef.current);
+        } catch (e) {
+          // ignore
+        }
+        heatLayerRef.current = null;
+      }
+    };
+  }, [map, points, showHeatmap]);
+
+  return null;
+}
+
+// =====================================================================
 export default function LiveMap({
   activeCity = 'hyderabad',
   selectedCategory = 'all',
@@ -303,77 +406,227 @@ export default function LiveMap({
   videoProgress = 0,
   selectedIncident = null,
   onSelectAlert,
-  onSelectBus
+  onSelectBus,
 }) {
+  const [activeMapStyle, setActiveMapStyle] = useState('voyager');
+  const [showStyleMenu, setShowStyleMenu] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [activeHeatmapMode, setActiveHeatmapMode] = useState('violations');
+  const [showAllRoutes, setShowAllRoutes] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [centerSignal, setCenterSignal] = useState(0);
+  const mapContainerRef = useRef(null);
 
-  // Map center for city
+  const mapStyleConfig = MAP_STYLES[activeMapStyle] || MAP_STYLES.voyager;
+  const activeModeConfig = HEATMAP_MODES[activeHeatmapMode] || HEATMAP_MODES.violations;
   const cityCenter = activeCity === 'hyderabad' ? [17.4435, 78.3772] : [18.5380, 73.7850];
+  const cityBusIds = activeCity === 'hyderabad' ? HYD_BUS_IDS : PUNE_BUS_IDS;
 
-  // Pick active route coords based on active bus
-  let activeRouteCoords = route216Coords;
-  if (activeBus?.bus_label === 'HYD-204') activeRouteCoords = route10HCoords;
-  else if (activeBus?.bus_label === 'HYD-305') activeRouteCoords = route5KCoords;
-  else if (activeBus?.bus_label === 'BUS-104') activeRouteCoords = route115Coords;
-  else if (activeBus?.bus_label === 'BUS-218') activeRouteCoords = route500DCoords;
-  else if (activeBus?.bus_label === 'BUS-301') activeRouteCoords = route335ECoords;
+  // Target bus & route (prioritize selected incident's bus or active selected bus)
+  const targetBusId = selectedIncident?.bus_id || activeBus?.bus_label || (activeCity === 'hyderabad' ? 'HYD-101' : 'BUS-104');
+  const activeRouteInfo = ROUTE_DISPLAY[targetBusId] || ROUTE_DISPLAY['HYD-101'];
+  const activeRouteCoords = activeRouteInfo.coords;
 
-  const interpolatedPos = interpolatePositionAlongRoute(activeRouteCoords, videoProgress);
-  const currentCenterLat = isPlaying ? interpolatedPos[0] : activeBus?.current_lat || cityCenter[0];
-  const currentCenterLng = isPlaying ? interpolatedPos[1] : activeBus?.current_lng || cityCenter[1];
+  // Interpolated bus position along active route
+  const routeState = getInterpolatedStateAlongRoute(activeRouteCoords, videoProgress);
+  const currentCenterLat = isPlaying ? routeState.position[0] : activeBus?.current_lat || cityCenter[0];
+  const currentCenterLng = isPlaying ? routeState.position[1] : activeBus?.current_lng || cityCenter[1];
 
-  // Filter alerts by selectedCategory
+  // Traveled trail
+  const traveledCoords = [
+    ...activeRouteCoords.slice(0, routeState.segmentIndex + 1),
+    routeState.position,
+  ];
+
+  // Alert filtering for pins
   const displayedAlerts = alerts
-    .filter((alert) => alert.latitude != null && alert.longitude != null && isFinite(alert.latitude) && isFinite(alert.longitude))
-    .filter((alert) => {
+    .filter((a) => a.latitude != null && a.longitude != null && isFinite(a.latitude) && isFinite(a.longitude))
+    .filter((a) => {
       if (selectedCategory === 'all') return true;
-      if (selectedCategory === 'road' || selectedCategory === 'all_road') {
-        return ['pothole', 'water_logging', 'road_crack', 'road_damage', 'garbage', 'missing_divider', 'zebra_fading'].includes(alert.alert_type);
-      }
-      if (selectedCategory === 'traffic' || selectedCategory === 'all_traffic') {
-        return ['vehicle_density', 'congestion'].includes(alert.alert_type);
-      }
-      if (selectedCategory === 'safety' || selectedCategory === 'all_safety') {
-        return ['overloaded_two_wheeler', 'helmet_violation', 'rash_driving', 'accident', 'watchlist_match'].includes(alert.alert_type);
-      }
-      if (selectedCategory === 'potholes' || selectedCategory === 'pothole') return alert.alert_type === 'pothole';
-      if (selectedCategory === 'water_logging') return alert.alert_type === 'water_logging';
-      if (selectedCategory === 'missing_divider') return alert.alert_type === 'missing_divider';
-      if (selectedCategory === 'damaged_road' || selectedCategory === 'road_crack') return ['road_crack', 'road_damage'].includes(alert.alert_type);
-      if (selectedCategory === 'garbage') return alert.alert_type === 'garbage';
-      if (selectedCategory === 'zebra_fading') return alert.alert_type === 'zebra_fading';
-      if (selectedCategory === 'congestion') return alert.alert_type === 'congestion';
-      if (selectedCategory === 'vehicle_density') return alert.alert_type === 'vehicle_density';
-      if (selectedCategory === 'overloaded_two_wheeler') return alert.alert_type === 'overloaded_two_wheeler';
-      if (selectedCategory === 'helmet_violation') return alert.alert_type === 'helmet_violation';
-      if (selectedCategory === 'accident' || selectedCategory === 'rash_driving') return ['accident', 'rash_driving'].includes(alert.alert_type);
-      if (selectedCategory === 'watchlist_match') return alert.alert_type === 'watchlist_match';
-      return alert.alert_type === selectedCategory;
+      const roadTypes = ['pothole', 'water_logging', 'road_crack', 'road_damage', 'garbage', 'missing_divider', 'zebra_fading'];
+      const trafficTypes = ['vehicle_density', 'congestion'];
+      const safetyTypes = ['overloaded_two_wheeler', 'helmet_violation', 'rash_driving', 'accident', 'watchlist_match'];
+      if (selectedCategory === 'road' || selectedCategory === 'all_road') return roadTypes.includes(a.alert_type);
+      if (selectedCategory === 'traffic' || selectedCategory === 'all_traffic') return trafficTypes.includes(a.alert_type);
+      if (selectedCategory === 'safety' || selectedCategory === 'all_safety') return safetyTypes.includes(a.alert_type);
+      return a.alert_type === selectedCategory;
     });
 
+  // Calculate complete heatmap points for all incidents & route corridors
+  const heatPoints = React.useMemo(() => {
+    if (!showHeatmap) return [];
+    const points = [];
+
+    // 1. All valid city alerts with weighted intensities
+    alerts.forEach((a) => {
+      if (!a.latitude || !a.longitude || !isFinite(a.latitude) || !isFinite(a.longitude)) return;
+      const baseIntensity = a.priority_level === 'P0' ? 1.0 : a.priority_level === 'P1' ? 0.75 : a.priority_level === 'P2' ? 0.55 : 0.35;
+      points.push([a.latitude, a.longitude, baseIntensity]);
+    });
+
+    // 2. Add subtle route waypoint density points to smoothly connect corridor hotspots
+    const route = activeRouteCoords || [];
+    const sampleStep = Math.max(1, Math.floor(route.length / 25));
+    for (let i = 0; i < route.length; i += sampleStep) {
+      const pt = route[i];
+      points.push([pt[0], pt[1], 0.25]);
+    }
+
+    return points;
+  }, [showHeatmap, alerts, activeRouteCoords]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!mapContainerRef.current) return;
+    if (!document.fullscreenElement) {
+      mapContainerRef.current.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  }, []);
+
   return (
-    <div className="relative w-full h-full min-h-[440px] rounded-xl overflow-hidden border border-slate-200 shadow-xs bg-white">
-      {/* Overlay Toolbar */}
-      <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-xs p-1.5 rounded-xl border border-slate-200 shadow-md flex items-center space-x-2 text-xs font-medium text-slate-700">
-        <span className="text-[10px] font-mono uppercase text-slate-400 font-bold px-1.5">
-          {activeCity.toUpperCase()} CORRIDOR
-        </span>
+    <div
+      ref={mapContainerRef}
+      className={`relative w-full h-full min-h-[440px] rounded-xl overflow-hidden shadow-sm bg-slate-100 ${
+        isFullscreen ? 'fixed inset-0 z-50 rounded-none' : ''
+      }`}
+    >
+      {/* ── TOP LEFT: Map style + pin count ── */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
+        {/* Style picker */}
+        <div className="relative">
+          <button
+            onClick={() => setShowStyleMenu(!showStyleMenu)}
+            className="map-glass-panel flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-700 hover:bg-white/95 transition-all"
+          >
+            <span>{mapStyleConfig.icon}</span>
+            <span>{mapStyleConfig.name}</span>
+            <Layers className="w-3 h-3 text-slate-400" />
+          </button>
 
-        <span className="text-[11px] font-mono font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
-          {displayedAlerts.length} Map Pins
-        </span>
+          {showStyleMenu && (
+            <div className="absolute top-full left-0 mt-1.5 w-44 bg-white rounded-xl border border-slate-200 shadow-xl p-1.5 z-30">
+              {Object.values(MAP_STYLES).map((style) => (
+                <button
+                  key={style.id}
+                  onClick={() => { setActiveMapStyle(style.id); setShowStyleMenu(false); }}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] transition-colors cursor-pointer ${
+                    activeMapStyle === style.id
+                      ? 'bg-blue-50 text-blue-700 font-semibold'
+                      : 'text-slate-600 hover:bg-slate-50 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>{style.icon}</span>
+                    <span>{style.name}</span>
+                  </div>
+                  {activeMapStyle === style.id && <Check className="w-3 h-3 text-blue-600" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
+        {/* Pin count badge */}
+        <div className="map-glass-panel px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-600">
+          {displayedAlerts.length} alerts
+        </div>
+      </div>
+
+      {/* ── TOP RIGHT: controls ── */}
+      <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+        {/* Toggle all routes */}
         <button
-          onClick={() => setShowHeatmap(!showHeatmap)}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded-md transition-all text-xs ${
-            showHeatmap ? 'bg-orange-500 text-white font-bold shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+          onClick={() => setShowAllRoutes(!showAllRoutes)}
+          title={showAllRoutes ? 'Hide other routes' : 'Show all routes'}
+          className={`map-glass-panel flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+            showAllRoutes ? 'text-slate-700 hover:bg-white/95' : 'text-slate-400 hover:bg-white/95'
           }`}
         >
-          <Flame className="w-3.5 h-3.5" />
+          <Route className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Routes</span>
+        </button>
+
+        {/* Heatmap toggle button */}
+        <button
+          onClick={() => setShowHeatmap(!showHeatmap)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer shadow-sm ${
+            showHeatmap
+              ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-orange-300'
+              : 'map-glass-panel text-slate-700 hover:bg-white/95'
+          }`}
+        >
+          <Flame className={`w-3.5 h-3.5 ${showHeatmap ? 'animate-pulse text-yellow-300' : ''}`} />
           <span>Heatmap</span>
+        </button>
+
+        {/* Recenter */}
+        <button
+          onClick={() => setCenterSignal((p) => p + 1)}
+          title="Recenter on bus"
+          className="map-glass-panel p-1.5 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-white/95 transition-all cursor-pointer"
+        >
+          <Target className="w-4 h-4" />
+        </button>
+
+        {/* Fullscreen */}
+        <button
+          onClick={toggleFullscreen}
+          title="Fullscreen"
+          className="map-glass-panel p-1.5 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-white/95 transition-all cursor-pointer"
+        >
+          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
       </div>
 
+      {/* ── BOTTOM LEFT: route legend ── */}
+      {showAllRoutes && (
+        <div className="absolute bottom-6 left-3 z-20 map-glass-panel rounded-lg px-3 py-2 flex flex-col gap-1">
+          {cityBusIds.map((busId) => {
+            const rd = ROUTE_DISPLAY[busId];
+            if (!rd) return null;
+            return (
+              <div key={busId} className="flex items-center gap-2">
+                <div
+                  style={{ background: rd.color }}
+                  className="w-6 h-1 rounded-full opacity-80"
+                />
+                <span className="text-[10px] font-mono font-semibold text-slate-600">{rd.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── BOTTOM RIGHT: Heat Intensity Legend ── */}
+      {showHeatmap && (
+        <div className="absolute bottom-6 right-3 z-20 bg-slate-950/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-3 flex flex-col gap-1.5 min-w-[170px] shadow-2xl text-slate-100 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100 pb-1 border-b border-slate-800">
+            <Flame className="w-3.5 h-3.5 text-orange-400 fill-orange-400/20" />
+            <span>Heat Intensity</span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-300 font-medium">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#2ee6a6] shadow-[0_0_6px_#2ee6a6] inline-block"></span>
+            <span>Low Density</span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-300 font-medium">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#ffe66d] shadow-[0_0_6px_#ffe66d] inline-block"></span>
+            <span>Moderate</span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-300 font-medium">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#ff8a3d] shadow-[0_0_6px_#ff8a3d] inline-block"></span>
+            <span>High Risk</span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-300 font-medium">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#ff3b4f] shadow-[0_0_6px_#ff3b4f] inline-block"></span>
+            <span>Critical Hotspot</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── LEAFLET MAP ── */}
       <MapContainer
         center={cityCenter}
         zoom={13}
@@ -381,8 +634,9 @@ export default function LiveMap({
         zoomControl={false}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          key={activeMapStyle}
+          attribution={mapStyleConfig.attribution}
+          url={mapStyleConfig.url}
         />
 
         <MapUpdater
@@ -391,68 +645,82 @@ export default function LiveMap({
           isMoving={isPlaying}
           selectedIncident={selectedIncident}
           activeCity={activeCity}
+          centerOnBusSignal={centerSignal}
         />
 
-        {/* Polylines for Active Routes */}
-        {activeCity === 'hyderabad' ? (
-          <>
-            <Polyline positions={route216Coords} pathOptions={{ color: '#0284C7', weight: 4, opacity: 0.8 }} />
-            <Polyline positions={route10HCoords} pathOptions={{ color: '#0D9488', weight: 3.5, opacity: 0.6 }} />
-            <Polyline positions={route5KCoords} pathOptions={{ color: '#6366F1', weight: 3.5, opacity: 0.6 }} />
-          </>
-        ) : (
-          <>
-            <Polyline positions={route115Coords} pathOptions={{ color: '#2563EB', weight: 4, opacity: 0.8 }} />
-            <Polyline positions={route500DCoords} pathOptions={{ color: '#4F46E5', weight: 3.5, opacity: 0.6 }} />
-            <Polyline positions={route335ECoords} pathOptions={{ color: '#7C3AED', weight: 3.5, opacity: 0.6 }} />
-          </>
-        )}
+        {/* ── LEAFLET.HEAT LAYER ── */}
+        <LeafletHeatmapLayer points={heatPoints} showHeatmap={showHeatmap} />
 
-        {/* Heatmap Rings */}
-        {showHeatmap &&
-          displayedAlerts.map((alert) => (
-            <Circle
-              key={`heat-${alert.id}`}
-              center={[alert.latitude, alert.longitude]}
-              radius={70}
+        {/* ── CITY ROUTES (All routes drawn solid; selected bus/incident route glows brightly) ── */}
+        {cityBusIds.map((busId) => {
+          const rd = ROUTE_DISPLAY[busId];
+          if (!rd) return null;
+          const isTarget = busId === targetBusId;
+          return (
+            <Polyline
+              key={`route-city-${busId}`}
+              positions={rd.coords}
               pathOptions={{
-                fillColor: alert.priority_level === 'P0' ? '#DC2626' : '#EA580C',
-                fillOpacity: 0.25,
-                stroke: false
+                color: rd.color,
+                weight: isTarget ? 5.5 : 3.5,
+                opacity: isTarget ? 0.95 : (showAllRoutes ? 0.65 : 0.25),
+                dashArray: isTarget ? undefined : (showAllRoutes ? undefined : '5, 8'),
               }}
             />
-          ))}
+          );
+        })}
 
-        {/* Bus Markers */}
+        {/* ── TRAVELED TRAIL (bright active bus path) ── */}
+        {traveledCoords.length > 1 && (
+          <Polyline
+            positions={traveledCoords}
+            pathOptions={{ color: activeRouteInfo.color, weight: 6, opacity: 1.0 }}
+          />
+        )}
+
+        {/* ── BUS MARKERS ── */}
         {buses.map((bus) => {
-          const isThisBusActive = activeBus && activeBus.bus_label === bus.bus_label;
-          const isMoving = isThisBusActive ? isPlaying : false;
+          const isThisBusActive = activeBus?.bus_label === bus.bus_label;
+          const isMoving = isThisBusActive && isPlaying;
           const speed = isMoving ? activeBus?.speed_kmh || bus.speed_kmh || 32 : 0;
-          const markerPos = isThisBusActive && isPlaying ? interpolatedPos : [bus.current_lat, bus.current_lng];
+          const markerPos =
+            isThisBusActive && isPlaying
+              ? routeState.position
+              : [bus.current_lat, bus.current_lng];
+          const busBearing = isThisBusActive && isPlaying ? routeState.bearing : 0;
+          const rd = ROUTE_DISPLAY[bus.bus_label];
 
           return (
             <Marker
               key={`bus-${bus.id || bus.bus_label}`}
               position={markerPos}
-              icon={createBusIcon(bus.bus_label, speed, isMoving, isThisBusActive)}
-              eventHandlers={{
-                click: () => onSelectBus && onSelectBus(bus)
-              }}
+              icon={createBusIcon(bus.bus_label, speed, isMoving, isThisBusActive, busBearing)}
+              eventHandlers={{ click: () => onSelectBus && onSelectBus(bus) }}
             >
-              <Popup offset={[130, -5]} closeButton={false}>
+              <Popup offset={[0, -32]} closeButton={false}>
                 <div className="p-3 w-52 font-sans text-xs">
-                  <div className="flex items-center justify-between border-b pb-1.5 mb-1.5 font-bold">
-                    <span>{bus.bus_label}</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-mono">
-                      {isMoving ? 'ONLINE' : 'STANDBY'}
+                  <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div
+                        style={{ background: rd?.color || '#94A3B8' }}
+                        className="w-2.5 h-2.5 rounded-full"
+                      />
+                      <span className="font-bold text-slate-900 text-sm">{bus.bus_label}</span>
+                    </div>
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                        isMoving ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {isMoving ? `${speed} km/h` : 'STANDBY'}
                     </span>
                   </div>
-                  <p className="text-slate-600 text-[11px] mb-2">{bus.route_name}</p>
+                  <p className="text-slate-500 text-[10px] mb-2.5 leading-relaxed">{bus.route_name}</p>
                   <button
                     onClick={() => onSelectBus && onSelectBus(bus)}
-                    className="w-full bg-blue-600 text-white font-bold py-1 rounded text-center text-xs"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 rounded-lg text-[11px] transition-colors cursor-pointer"
                   >
-                    Select Bus Stream →
+                    Select Live Stream →
                   </button>
                 </div>
               </Popup>
@@ -460,35 +728,45 @@ export default function LiveMap({
           );
         })}
 
-        {/* Incident Alert Markers */}
+        {/* ── INCIDENT MARKERS ── */}
         {displayedAlerts.map((alert) => (
           <Marker
             key={`alert-${alert.id}`}
             position={[alert.latitude, alert.longitude]}
             icon={createIncidentIcon(alert)}
-            eventHandlers={{
-              click: () => onSelectAlert && onSelectAlert(alert)
-            }}
+            eventHandlers={{ click: () => onSelectAlert && onSelectAlert(alert) }}
           >
-            <Popup offset={[0, -20]}>
-              <div className="p-2.5 w-60 text-xs font-sans">
-                <div className="flex items-center justify-between border-b pb-1 mb-1 font-bold">
-                  <span className="text-slate-900">{alert.alert_code}</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded font-extrabold bg-red-100 text-red-800">
-                    {alert.priority_level || 'P1'}
+            <Popup offset={[0, -18]} closeButton={false}>
+              <div className="p-3 w-60 text-xs font-sans">
+                <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-slate-100">
+                  <span className="font-mono font-bold text-slate-800 text-[11px]">
+                    {alert.alert_code}
+                  </span>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                      alert.priority_level === 'P0'
+                        ? 'bg-red-600 text-white'
+                        : alert.priority_level === 'P1'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {alert.priority_level || 'P2'}
                   </span>
                 </div>
-                <div className="font-semibold text-slate-800 mb-1">{alert.alert_type.toUpperCase().replace(/_/g, ' ')}</div>
-                <p className="text-[11px] text-slate-500 mb-2">{alert.location_name}</p>
-                <div className="text-[10px] font-mono text-slate-600 bg-slate-50 p-1.5 rounded border mb-2">
-                  <div>Confidence: {(alert.confidence * 100).toFixed(1)}%</div>
-                  <div>Sighted: {alert.sighting_count || 1} passes</div>
+                <div className="font-semibold text-slate-800 mb-0.5">
+                  {alert.alert_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                </div>
+                <p className="text-[10px] text-slate-400 mb-2">{alert.location_name}</p>
+                <div className="flex gap-3 text-[10px] text-slate-500 font-mono mb-2.5">
+                  <span>Confidence: <strong className="text-slate-700">{(alert.confidence * 100).toFixed(0)}%</strong></span>
+                  <span>Seen: <strong className="text-purple-600">{alert.sighting_count || 1}×</strong></span>
                 </div>
                 <button
                   onClick={() => onSelectAlert && onSelectAlert(alert)}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-center text-xs shadow-xs transition-colors cursor-pointer"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1.5 rounded-lg text-[11px] transition-colors cursor-pointer"
                 >
-                  Inspect AI Evidence →
+                  Inspect Evidence →
                 </button>
               </div>
             </Popup>
@@ -498,3 +776,4 @@ export default function LiveMap({
     </div>
   );
 }
+

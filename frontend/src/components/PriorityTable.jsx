@@ -27,7 +27,7 @@ export default function PriorityTable({
 
   const handleCopyCoords = (e, alert) => {
     e.stopPropagation();
-    const text = `${alert.latitude?.toFixed(4)}?, ${alert.longitude?.toFixed(4)}?`;
+    const text = `${alert.latitude?.toFixed(4)}°, ${alert.longitude?.toFixed(4)}°`;
     navigator.clipboard.writeText(text);
     setCopiedId(alert.id);
     setTimeout(() => setCopiedId(null), 1500);
@@ -176,16 +176,16 @@ export default function PriorityTable({
         </div>
       </div>
 
-      {/* 2. TABLE BODY */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        <table className="w-full border-collapse text-left text-xs">
-          <thead className="bg-slate-100/90 sticky top-0 z-10 border-b border-slate-200 text-slate-500 font-mono text-[10px] uppercase">
+      {/* 2. TABLE BODY (No horizontal scroll) */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        <table className="w-full table-fixed border-collapse text-left text-xs">
+          <thead className="bg-slate-100/90 sticky top-0 z-10 border-b border-slate-200 text-slate-500 font-mono text-[9px] uppercase tracking-wider">
             <tr>
-              <th className="py-2.5 pl-3 pr-1 w-10 text-center">Index</th>
-              <th className="py-2.5 px-2">Hazard & Location</th>
-              <th className="py-2.5 px-2">GPS</th>
-              <th className="py-2.5 px-2 text-center">Multi-Pass</th>
-              <th className="py-2.5 pr-3 pl-2 text-right">Risk Tag</th>
+              <th className="py-2 pl-2 pr-1 w-10 text-center">Index</th>
+              <th className="py-2 px-1 text-left">Hazard & Location</th>
+              <th className="py-2 px-1 w-28 text-left">GPS</th>
+              <th className="py-2 px-1 w-16 text-center">Multi-Pass</th>
+              <th className="py-2 pr-2 pl-1 w-20 text-right">Risk Tag</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -212,9 +212,9 @@ export default function PriorityTable({
                     }`}
                   >
                     {/* Column 1: Index Badge */}
-                    <td className="py-2.5 pl-3 pr-1 text-center font-mono">
+                    <td className="py-2 pl-2 pr-1 text-center font-mono align-middle">
                       <span
-                        className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold border ${
+                        className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold border ${
                           isSelected
                             ? 'bg-blue-600 text-white border-blue-700 shadow-2xs'
                             : pWeight === 4
@@ -229,53 +229,53 @@ export default function PriorityTable({
                     </td>
 
                     {/* Column 2: Hazard Name & Location */}
-                    <td className="py-2.5 px-2">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors uppercase text-[11px]">
+                    <td className="py-2 px-1 align-middle overflow-hidden">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors uppercase text-[10px] truncate">
                           {alert.alert_type?.replace(/_/g, ' ')}
                         </span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[150px]" title={alert.location_name}>
+                        <span className="text-[9px] text-slate-500 truncate block w-full" title={alert.location_name}>
                           {alert.location_name || 'Transit Segment'}
                         </span>
                       </div>
                     </td>
 
                     {/* Column 3: GPS Coordinates */}
-                    <td className="py-2.5 px-2">
-                      <div className="flex items-center space-x-1 font-mono text-[11px] text-slate-700">
-                        <span>
-                          {alert.latitude?.toFixed(4)}?:{alert.longitude?.toFixed(4)}?
+                    <td className="py-2 px-1 align-middle overflow-hidden">
+                      <div className="flex items-center space-x-0.5 font-mono text-[10px] text-slate-600 min-w-0">
+                        <span className="truncate">
+                          {alert.latitude?.toFixed(3)}, {alert.longitude?.toFixed(3)}
                         </span>
                         <button
                           onClick={(e) => handleCopyCoords(e, alert)}
-                          className="text-slate-400 hover:text-blue-600 p-0.5 rounded transition-colors"
+                          className="text-slate-400 hover:text-blue-600 p-0.5 rounded transition-colors shrink-0"
                           title="Copy GPS coordinates"
                         >
                           {copiedId === alert.id ? (
-                            <Check className="w-3 h-3 text-emerald-600" />
+                            <Check className="w-2.5 h-2.5 text-emerald-600" />
                           ) : (
-                            <Copy className="w-3 h-3" />
+                            <Copy className="w-2.5 h-2.5" />
                           )}
                         </button>
                       </div>
                     </td>
 
                     {/* Column 4: Multi-Pass Verification */}
-                    <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                    <td className="py-2 px-1 text-center align-middle">
                       <span
-                        className={`inline-block px-2 py-0.5 rounded-md font-mono text-[11px] font-bold ${
+                        className={`inline-block px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${
                           (alert.sighting_count || 1) >= 5
                             ? 'bg-purple-100 text-purple-800 border border-purple-200'
                             : 'bg-slate-100 text-slate-700 border border-slate-200'
                         }`}
                         title={`Verified across ${alert.sighting_count || 1} observations`}
                       >
-                        {alert.sighting_count || 1}
+                        {alert.sighting_count || 1}x
                       </span>
                     </td>
 
-                    {/* Column 5: Risk Tag & Dossier Trigger */}
-                    <td className="py-2.5 pr-3 pl-2 text-right whitespace-nowrap">
+                    {/* Column 5: Risk Tag */}
+                    <td className="py-2 pr-2 pl-1 text-right align-middle">
                       <div className="flex items-center justify-end space-x-1">
                         {renderRiskBadge(alert)}
                         <button
@@ -283,10 +283,10 @@ export default function PriorityTable({
                             e.stopPropagation();
                             onInspectIncident(alert);
                           }}
-                          className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100"
+                          className="text-slate-400 hover:text-blue-600 p-0.5 rounded hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                           title="Open Full AI Evidence Dossier"
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          <ExternalLink className="w-3 h-3" />
                         </button>
                       </div>
                     </td>

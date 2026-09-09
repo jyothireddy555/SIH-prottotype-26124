@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     yield  # App is live and serving requests during this point
 
 app = FastAPI(
-    title="ROADWISE AI — Urban Transit Intelligence Platform",
+    title="AI Urban Intelligence Platform",
     description="SIH26124: Mobile Edge-AI sensing on public transport bus fleets for road defect detection and traffic intelligence.",
     version="1.0.0",
     lifespan=lifespan
@@ -63,7 +63,7 @@ app.include_router(infrastructure.router)
 @app.get("/")
 def root():
     return {
-        "platform": "ROADWISE AI Urban Intelligence",
+        "platform": "AI Urban Intelligence Platform",
         "problem_statement": "SIH26124",
         "status": "ONLINE",
         "docs": "/docs"

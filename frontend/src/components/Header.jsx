@@ -102,10 +102,7 @@ export default function Header({
         {/* Branding */}
         <div className="flex items-center space-x-2">
           <span className="font-black text-slate-900 tracking-tight text-sm sm:text-base font-sans">
-            UrbanEdge<span className="text-blue-600">AI</span>
-          </span>
-          <span className="text-xs text-slate-400 hidden lg:inline font-medium">
-            ? Moving Sensors Platform
+            AI Urban Intelligence <span className="text-blue-600">Platform</span>
           </span>
         </div>
       </div>

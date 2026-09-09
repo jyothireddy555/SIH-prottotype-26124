@@ -3,7 +3,7 @@ import os
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  ROADWISE AI — Urban Transit Edge-AI Intelligence Platform")
+    print("  AI Urban Intelligence Platform")
     print("  Smart India Hackathon (SIH26124)")
     print("  Backend running on: http://127.0.0.1:8000")
     print("  API Docs: http://127.0.0.1:8000/docs")
